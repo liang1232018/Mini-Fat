@@ -319,6 +319,11 @@ extern void lowfat_free(void *ptr) {
     __libc_free((void*)((uint64_t)ptr & 0x3FFFFFFFFFFFFFF));
 }
 
+extern void minifat_free(void *ptr) {
+    __libc_free((void*)((uint64_t)ptr & 0x3FFFFFFFFFFFFFF));
+}
+
+
 /*
  * Stdlib malloc() and free() replacements.
  */

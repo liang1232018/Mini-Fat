@@ -1092,7 +1092,7 @@ static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
 #define REPLACE2(M, N, alloc)                                           \
     do {                                                                \
         if (Function *F0 = (M)->getFunction(N)) {                       \
-            Value *F1 = (M)->getOrInsertFunction("lowfat_" N,           \
+            Value *F1 = (M)->getOrInsertFunction("minifat_" N,           \
                 F0->getFunctionType());                                 \
             F0->replaceAllUsesWith(F1);                                 \
             Function *F2 = dyn_cast<Function>(F1);                      \
@@ -1114,18 +1114,18 @@ static void replaceUnsafeLibFuncs(Module *M)
         return;
 
     REPLACE(M, malloc, true);
-    REPLACE(M, free, false);
-    REPLACE(M, calloc, true);
-    REPLACE(M, realloc, true);
+    REPLACE(M, free, true);
+    REPLACE(M, calloc, false);
+    REPLACE(M, realloc, false);
 
     REPLACE(M, posix_memalign, false);
-    REPLACE(M, aligned_alloc, true);
-    REPLACE(M, valloc, true);
-    REPLACE(M, memalign, true);
-    REPLACE(M, pvalloc, true);
+    // REPLACE(M, aligned_alloc, true);
+    // REPLACE(M, valloc, true);
+    // REPLACE(M, memalign, true);
+    // REPLACE(M, pvalloc, true);
 
-    REPLACE(M, strdup, true);
-    REPLACE(M, strndup, true);
+    // REPLACE(M, strdup, true);
+    // REPLACE(M, strndup, true);
 
     REPLACE2(M, "_Znwm", true);                 // C++ new
     REPLACE2(M, "_Znam", true);                 // C++ new[]
