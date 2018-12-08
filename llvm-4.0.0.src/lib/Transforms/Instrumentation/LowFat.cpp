@@ -240,6 +240,8 @@ static bool filterPtr(unsigned kind)
             return option_no_check_writes;
         case LOWFAT_OOB_ERROR_MEMSET:
             return option_no_check_memset;
+        case LOWFAT_OOB_ERROR_MEMCPY_ONE:
+        case LOWFAT_OOB_ERROR_MEMCPY_TWO:
         case LOWFAT_OOB_ERROR_MEMCPY:
             return option_no_check_memcpy;
         case LOWFAT_OOB_ERROR_ESCAPE_CALL:
@@ -890,8 +892,10 @@ static void addToPlan(const TargetLibraryInfo *TLI, const DataLayout *DL,
             size = DL->getTypeAllocSize(Ty);
         }
     }
-    if (bounds.isInBounds(size))
-        return;
+    if (bounds.isInBounds(size) && kind != LOWFAT_OOB_ERROR_ESCAPE_STORE) {
+        kind = MINIFAT_PTR_INVALID;
+    }
+        
     plan.push_back(make_tuple(I, Ptr, kind));
 }
 static void getInterestingInsts(const TargetLibraryInfo *TLI,
@@ -926,14 +930,14 @@ static void getInterestingInsts(const TargetLibraryInfo *TLI,
             builder.CreateIntCast(MI->getOperand(2), builder.getInt64Ty(),
                 false));
         addToPlan(TLI, DL, boundsInfo, plan, I, SrcEnd,
-            LOWFAT_OOB_ERROR_MEMCPY);
+            LOWFAT_OOB_ERROR_MEMCPY_TWO);
         Value *Dst = builder.CreateBitCast(MI->getOperand(0),
             builder.getInt8PtrTy());
         Value *DstEnd = builder.CreateGEP(Dst,
             builder.CreateIntCast(MI->getOperand(2), builder.getInt64Ty(),
                 false));
         addToPlan(TLI, DL, boundsInfo, plan, I, DstEnd,
-            LOWFAT_OOB_ERROR_MEMCPY);
+            LOWFAT_OOB_ERROR_MEMCPY_ONE);
         return;
     }
     else if (MemSetInst *MI = dyn_cast<MemSetInst>(I))
@@ -998,6 +1002,7 @@ static void getInterestingInsts(const TargetLibraryInfo *TLI,
     else if (InsertValueInst *Insert = dyn_cast<InsertValueInst>(I))
     {
         Ptr = Insert->getInsertedValueOperand();
+        printf("test value\n");
         if (!Ptr->getType()->isPointerTy())
             return;
         kind = LOWFAT_OOB_ERROR_ESCAPE_INSERT;
@@ -1028,6 +1033,7 @@ static void getInterestingInsts(const TargetLibraryInfo *TLI,
 /*
  * Insert a bounds check before instruction `I'.
  */
+// static int check_nums = 0;
 static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
     unsigned info, const PtrInfo &baseInfo)
 {
@@ -1061,26 +1067,74 @@ static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
             size = DL->getTypeAllocSize(Ty)-1;
         }
     }
+    
     Value *Size = builder.getInt64(size);
     Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt8PtrTy());
-    Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
-        builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
-        builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
-    builder.CreateCall(BoundsCheck,
-        {builder.getInt32(info), TPtr, Size, BasePtr});
-    
-    TPtr = builder.CreateBitCast(TPtr, builder.getInt64Ty());
-    TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
-    TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
+
+    // 如果在一定在界内，那么直接加指针操作即可
+    if(info != MINIFAT_PTR_INVALID) {
+        // check_nums++;
+        // printf("check_nums %d\n",check_nums);
+
+        Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
+            builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+            builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+        builder.CreateCall(BoundsCheck,
+            {builder.getInt32(info), TPtr, Size, BasePtr});
+    }    
     // 对任意的指针加 屏蔽size的操作，假设指针是存在较后的这个操作数里的
     if(dyn_cast<StoreInst>(I) || dyn_cast<LoadInst>(I)) {
-        for (auto OI = I->op_end()-1, OE = I->op_begin(); OI >= OE; --OI) {
-            if((*OI)->getType()->getTypeID () == 15) {
-                *OI = TPtr;
-                break;
+            if(info != LOWFAT_OOB_ERROR_ESCAPE_STORE) {
+
+                TPtr = builder.CreateBitCast(TPtr, builder.getInt64Ty());
+                TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
+                TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
+                // auto OI = I->op_begin();
+                // OI++;
+                // // if(OI != I->op_end() && (*OI)->getType()->getTypeID () == 15)
+                //     *OI = TPtr;
+                
+                for (auto OI = I->op_end()-1, OE = I->op_begin(); OI >= OE; --OI) {
+                    if((*OI)->getType()->getTypeID () == 15) {
+                        *OI = TPtr;
+                        break;
+                    }
+                }
             }
+            
+    } else if (MemSetInst *MI = dyn_cast<MemSetInst>(I)) {
+        TPtr = builder.CreateBitCast(TPtr, builder.getInt64Ty());
+        TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
+        Value *mem_size = MI->getOperand(2);
+        TPtr = builder.CreateSub(TPtr,mem_size);
+        TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
+
+        auto OI = MI->op_begin();
+        *OI = TPtr;
+    } else if (MemTransferInst *MI = dyn_cast<MemTransferInst>(I)) {
+        TPtr = builder.CreateBitCast(TPtr, builder.getInt64Ty());
+        TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
+        Value *mem_size = MI->getOperand(2);
+        TPtr = builder.CreateSub(TPtr,mem_size);
+        TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
+
+        if(info == LOWFAT_OOB_ERROR_MEMCPY_ONE) {
+            auto OI = MI->op_begin();
+            *OI = TPtr;
+        } else if(info == LOWFAT_OOB_ERROR_MEMCPY_TWO) {
+            auto OI = MI->op_begin();
+            OI++;
+            *OI = TPtr;
         }
+    } else if (InsertElementInst *Insert = dyn_cast<InsertElementInst>(I)) {
+        TPtr = builder.CreateBitCast(TPtr, builder.getInt64Ty());
+        TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
+        TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
+        auto OI = Insert->op_begin();
+        OI++;
+        *OI = TPtr;
     }
+    
 }
 
 /*
@@ -1115,17 +1169,17 @@ static void replaceUnsafeLibFuncs(Module *M)
 
     REPLACE(M, malloc, true);
     REPLACE(M, free, true);
-    REPLACE(M, calloc, false);
+    REPLACE(M, calloc, true);
     REPLACE(M, realloc, false);
 
     REPLACE(M, posix_memalign, false);
-    // REPLACE(M, aligned_alloc, true);
-    // REPLACE(M, valloc, true);
-    // REPLACE(M, memalign, true);
-    // REPLACE(M, pvalloc, true);
+    REPLACE(M, aligned_alloc, true);
+    REPLACE(M, valloc, true);
+    REPLACE(M, memalign, true);
+    REPLACE(M, pvalloc, true);
 
-    // REPLACE(M, strdup, true);
-    // REPLACE(M, strndup, true);
+    REPLACE(M, strdup, true);
+    REPLACE(M, strndup, true);
 
     REPLACE2(M, "_Znwm", true);                 // C++ new
     REPLACE2(M, "_Znam", true);                 // C++ new[]
@@ -1133,6 +1187,525 @@ static void replaceUnsafeLibFuncs(Module *M)
     REPLACE2(M, "_ZdaPv", false);               // C++ delete[]
     REPLACE2(M, "_ZnwmRKSt9nothrow_t", true);   // C++ new nothrow
     REPLACE2(M, "_ZnamRKSt9nothrow_t", true);   // C++ new[] nothrow
+
+    // REPLACE(M, memalign, false);
+    // REPLACE(M, posix_memalign, false);
+    // REPLACE(M, valloc, false);
+    // REPLACE(M, pvalloc, false);
+    // REPLACE(M, free, false);
+    REPLACE(M, mmap, true);
+    REPLACE(M, mmap64, true);
+    REPLACE(M, mremap, true);
+    REPLACE(M, mprotect, true);
+    REPLACE(M, madvise, true);
+    REPLACE(M, mincore, true);
+    REPLACE(M, munmap, true);
+    REPLACE(M, munmap64, true);
+    // REPLACE(M, memcpy, true);
+    // REPLACE(M, memmove, true);
+    // REPLACE(M, memset, true);
+    REPLACE(M, bzero, true);
+    REPLACE(M, bcmp, true);
+    REPLACE(M, bcopy, true);
+    REPLACE(M, memccpy, true);
+    REPLACE(M, memchr, true);
+    REPLACE(M, memcmp, true);
+    REPLACE(M, memmem, true);
+    REPLACE(M, mempcpy, true);
+    REPLACE(M, memrchr, true);
+    REPLACE(M, index, true);
+    REPLACE(M, rindex, true);
+    REPLACE(M, stpcpy, true);
+    REPLACE(M, stpncpy, true);
+    REPLACE(M, strcasecmp, true);
+    REPLACE(M, strcasestr, true);
+    REPLACE(M, strcat, true);
+    REPLACE(M, strchr, true);
+    REPLACE(M, strchrnul, true);
+    REPLACE(M, strcmp, true);
+    REPLACE(M, strcpy, true);
+    REPLACE(M, strcspn, true);
+    REPLACE(M, __sgxbounds_memdup, true);
+    REPLACE(M, __sgxbounds_strdup, true);
+    REPLACE(M, strdup, true);
+    REPLACE(M, strerror, true);
+    REPLACE(M, strerror_r, true);
+    REPLACE(M, __xpg_strerror_r, true);
+    REPLACE(M, strlcat, true);
+    REPLACE(M, strlcpy, true);
+    REPLACE(M, strlen, true);
+    REPLACE(M, strncasecmp, true);
+    REPLACE(M, strncat, true);
+    REPLACE(M, strncmp, true);
+    REPLACE(M, strncpy, true);
+    REPLACE(M, strndup, true);
+    REPLACE(M, strnlen, true);
+    REPLACE(M, strpbrk, true);
+    REPLACE(M, strrchr, true);
+    REPLACE(M, strsep, true);
+    REPLACE(M, strsignal, true);
+    REPLACE(M, strspn, true);
+    REPLACE(M, strstr, true);
+    REPLACE(M, strtok, true);
+    REPLACE(M, strtok_r, true);
+    REPLACE(M, strverscmp, true);
+    REPLACE(M, swab, true);
+    REPLACE(M, open, true);
+    REPLACE(M, open64, true);
+    REPLACE(M, openat, true);
+    REPLACE(M, openat64, true);
+    REPLACE(M, creat, true);
+    REPLACE(M, creat64, true);
+    REPLACE(M, access, true);
+    REPLACE(M, acct, true);
+    REPLACE(M, chdir, true);
+    REPLACE(M, chown, true);
+    REPLACE(M, lchown, true);
+    REPLACE(M, ctermid, true);
+    REPLACE(M, faccessat, true);
+    REPLACE(M, fchownat, true);
+    REPLACE(M, getgroups, true);
+    REPLACE(M, gethostname, true);
+    REPLACE(M, getlogin, true);
+    REPLACE(M, getlogin_r, true);
+    REPLACE(M, link, true);
+    REPLACE(M, linkat, true);
+    REPLACE(M, pipe, true);
+    REPLACE(M, pipe2, true);
+    REPLACE(M, pread, true);
+    REPLACE(M, pread64, true);
+    REPLACE(M, preadv, true);
+    REPLACE(M, preadv64, true);
+    REPLACE(M, pwrite, true);
+    REPLACE(M, pwrite64, true);
+    REPLACE(M, write, true);
+    REPLACE(M, pwritev, true);
+    REPLACE(M, pwritev64, true);
+    REPLACE(M, writev, true);
+    REPLACE(M, read, true);
+    REPLACE(M, readlink, true);
+    REPLACE(M, readlinkat, true);
+    REPLACE(M, readv, true);
+    REPLACE(M, renameat, true);
+    REPLACE(M, rmdir, true);
+    REPLACE(M, symlink, true);
+    REPLACE(M, symlinkat, true);
+    REPLACE(M, truncate, true);
+    REPLACE(M, truncate64, true);
+    REPLACE(M, ttyname, true);
+    REPLACE(M, ttyname_r, true);
+    REPLACE(M, unlink, true);
+    REPLACE(M, unlinkat, true);
+    REPLACE(M, fdopen, true);
+    REPLACE(M, fgetln, true);
+    REPLACE(M, fmemopen, true);
+    REPLACE(M, fopen, true);
+    REPLACE(M, fopen64, true);
+    REPLACE(M, fread, true);
+    REPLACE(M, fread_unlocked, true);
+    REPLACE(M, freopen, true);
+    REPLACE(M, freopen64, true);
+    REPLACE(M, fwrite, true);
+    REPLACE(M, fwrite_unlocked, true);
+    REPLACE(M, getdelim, true);
+    REPLACE(M, __getdelim, true);
+    REPLACE(M, getline, true);
+    REPLACE(M, open_memstream, true);
+    REPLACE(M, perror, true);
+    REPLACE(M, popen, true);
+    REPLACE(M, remove, true);
+    REPLACE(M, rename, true);
+    REPLACE(M, setbuf, true);
+    REPLACE(M, setbuffer, true);
+    REPLACE(M, setvbuf, true);
+    REPLACE(M, tempnam, true);
+    REPLACE(M, tmpnam, true);
+    REPLACE(M, scanf, true);
+    REPLACE(M, fscanf, true);
+    REPLACE(M, vfscanf, true);
+    REPLACE(M, vscanf, true);
+    REPLACE(M, vsscanf, true);
+    REPLACE(M, sscanf, true);
+    REPLACE(M, asprintf, true);
+    REPLACE(M, vasprintf, true);
+    REPLACE(M, dprintf, true);
+    REPLACE(M, vdprintf, true);
+    REPLACE(M, fprintf, true);
+    REPLACE(M, vfprintf, true);
+    REPLACE(M, snprintf, true);
+    REPLACE(M, sprintf, true);
+    REPLACE(M, vprintf, true);
+    REPLACE(M, vsnprintf, true);
+    REPLACE(M, vsprintf, true);
+    REPLACE(M, printf, true);
+    REPLACE(M, puts, true);
+    REPLACE(M, fputs, true);
+    REPLACE(M, fputs_unlocked, true);
+    REPLACE(M, gets, true);
+    REPLACE(M, fgets, true);
+    REPLACE(M, fgets_unlocked, true);
+    REPLACE(M, atoi, true);
+    REPLACE(M, atof, true);
+    REPLACE(M, atol, true);
+    REPLACE(M, qsort_cmp, true);
+    REPLACE(M, qsort, true);
+    REPLACE(M, strtof, true);
+    REPLACE(M, strtod, true);
+    REPLACE(M, strtold, true);
+    REPLACE(M, strtof_l, true);
+    REPLACE(M, strtod_l, true);
+    REPLACE(M, strtold_l, true);
+    REPLACE(M, strtoul, true);
+    REPLACE(M, strtoull, true);
+    REPLACE(M, gcvt, true);
+    REPLACE(M, ecvt, true);
+    REPLACE(M, fcvt, true);
+    REPLACE(M, asctime, true);
+    REPLACE(M, asctime_r, true);
+    REPLACE(M, clock_getcpuclockid, true);
+    REPLACE(M, clock_getres, true);
+    REPLACE(M, clock_gettime, true);
+    REPLACE(M, clock_nanosleep, true);
+    REPLACE(M, clock_settime, true);
+    REPLACE(M, ctime, true);
+    REPLACE(M, ctime_r, true);
+    REPLACE(M, ftime, true);
+    REPLACE(M, getdate, true);
+    REPLACE(M, gettimeofday, true);
+    REPLACE(M, gmtime, true);
+    REPLACE(M, gmtime_r, true);
+    REPLACE(M, localtime, true);
+    REPLACE(M, localtime_r, true);
+    REPLACE(M, mktime, true);
+    REPLACE(M, nanosleep, true);
+    REPLACE(M, strftime, true);
+    REPLACE(M, strftime_l, true);
+    REPLACE(M, strptime, true);
+    REPLACE(M, time, true);
+    REPLACE(M, timegm, true);
+    REPLACE(M, timer_create, true);
+    REPLACE(M, timer_gettime, true);
+    REPLACE(M, timer_settime, true);
+    REPLACE(M, times, true);
+    REPLACE(M, timespec_get, true);
+    REPLACE(M, utime, true);
+    REPLACE(M, getenv, true);
+    REPLACE(M, putenv, true);
+    REPLACE(M, setenv, true);
+    REPLACE(M, unsetenv, true);
+    REPLACE(M, chmod, true);
+    REPLACE(M, fchmodat, true);
+    REPLACE(M, fstat, true);
+    REPLACE(M, fstat64, true);
+    REPLACE(M, fstatat, true);
+    REPLACE(M, fstatat64, true);
+    REPLACE(M, futimens, true);
+    REPLACE(M, futimesat, true);
+    REPLACE(M, lchmod, true);
+    REPLACE(M, lstat, true);
+    REPLACE(M, lstat64, true);
+    REPLACE(M, mkdir, true);
+    REPLACE(M, mkdirat, true);
+    REPLACE(M, mkfifo, true);
+    REPLACE(M, mkfifoat, true);
+    REPLACE(M, mknod, true);
+    REPLACE(M, mknodat, true);
+    REPLACE(M, stat, true);
+    REPLACE(M, stat64, true);
+    REPLACE(M, statfs, true);
+    REPLACE(M, statfs64, true);
+    REPLACE(M, fstatfs, true);
+    REPLACE(M, fstatfs64, true);
+    REPLACE(M, statvfs, true);
+    REPLACE(M, statvfs64, true);
+    REPLACE(M, fstatvfs, true);
+    REPLACE(M, fstatvfs64, true);
+    REPLACE(M, utimensat, true);
+    REPLACE(M, __cxa_atexit, true);
+    REPLACE(M, __assert_fail, true);
+    REPLACE(M, erand48, true);
+    REPLACE(M, lcong48, true);
+    REPLACE(M, nrand48, true);
+    REPLACE(M, jrand48, true);
+    REPLACE(M, rand_r, true);
+    REPLACE(M, seed48, true);
+    REPLACE(M, getdents, true);
+    REPLACE(M, getdents64, true);
+    REPLACE(M, opendir, true);
+    REPLACE(M, readdir, true);
+    REPLACE(M, readdir64, true);
+    REPLACE(M, readdir_r, true);
+    REPLACE(M, readdir64_r, true);
+    REPLACE(M, readdir, true);
+    REPLACE(M, setjmp, true);
+    REPLACE(M, longjmp, true);
+    REPLACE(M, a64l, true);
+    REPLACE(M, l64a, true);
+    REPLACE(M, basename, true);
+    REPLACE(M, dirname, true);
+    REPLACE(M, get_current_dir_name, true);
+    REPLACE(M, getdomainname, true);
+    REPLACE(M, getopt, true);
+    REPLACE(M, getopt_long, true);
+    REPLACE(M, getopt_long_only, true);
+    REPLACE(M, getresgid, true);
+    REPLACE(M, getresuid, true);
+    REPLACE(M, getrlimit, true);
+    REPLACE(M, getrlimit64, true);
+    REPLACE(M, getrusage, true);
+    REPLACE(M, getsubopt, true);
+    REPLACE(M, initgroups, true);
+    REPLACE(M, setmntent, true);
+    REPLACE(M, getmntent_r, true);
+    REPLACE(M, getmntent, true);
+    REPLACE(M, addmntent, true);
+    REPLACE(M, hasmntopt, true);
+    REPLACE(M, nftw_fn, true);
+    REPLACE(M, nftw, true);
+    REPLACE(M, nftw64, true);
+    REPLACE(M, realpath, true);
+    REPLACE(M, setdomainname, true);
+    REPLACE(M, setrlimit, true);
+    REPLACE(M, setrlimit64, true);
+    REPLACE(M, openlog, true);
+    REPLACE(M, syslog, true);
+    REPLACE(M, vsyslog, true);
+    REPLACE(M, uname, true);
+    REPLACE(M, ioctl, true);
+    REPLACE(M, poll, true);
+    REPLACE(M, pselect, true);
+    REPLACE(M, select, true);
+    REPLACE(M, pthread_attr_getdetachstate, true);
+    REPLACE(M, pthread_attr_getguardsize, true);
+    REPLACE(M, pthread_attr_getinheritsched, true);
+    REPLACE(M, pthread_attr_getschedparam, true);
+    REPLACE(M, pthread_attr_getschedpolicy, true);
+    REPLACE(M, pthread_attr_getscope, true);
+    REPLACE(M, pthread_attr_getstack, true);
+    REPLACE(M, pthread_attr_getstacksize, true);
+    REPLACE(M, pthread_barrierattr_getpshared, true);
+    REPLACE(M, pthread_condattr_getclock, true);
+    REPLACE(M, pthread_condattr_getpshared, true);
+    REPLACE(M, pthread_mutexattr_getprotocol, true);
+    REPLACE(M, pthread_mutexattr_getpshared, true);
+    REPLACE(M, pthread_mutexattr_getrobust, true);
+    REPLACE(M, pthread_mutexattr_gettype, true);
+    REPLACE(M, pthread_rwlockattr_getpshared, true);
+    REPLACE(M, pthread_attr_setstack, true);
+    REPLACE(M, pthread_cond_timedwait, true);
+    // REPLACE(M, pthread_create, true);
+    REPLACE(M, pthread_getcpuclockid, true);
+    REPLACE(M, pthread_getschedparam, true);
+    REPLACE(M, pthread_join, true);
+    REPLACE(M, pthread_mutex_getprioceiling, true);
+    REPLACE(M, pthread_mutex_setprioceiling, true);
+    REPLACE(M, pthread_mutex_timedlock, true);
+    REPLACE(M, pthread_rwlock_timedrdlock, true);
+    REPLACE(M, pthread_rwlock_timedwrlock, true);
+    REPLACE(M, pthread_setcancelstate, true);
+    REPLACE(M, pthread_setcanceltype, true);
+    REPLACE(M, pthread_setschedparam, true);
+    REPLACE(M, pthread_setspecific, true);
+    REPLACE(M, pthread_getspecific, true);
+    REPLACE(M, sem_getvalue, true);
+    REPLACE(M, sem_open, true);
+    REPLACE(M, sem_timedwait, true);
+    REPLACE(M, sem_unlink, true);
+    REPLACE(M, pthread_attr_destroy, true);
+    REPLACE(M, pthread_attr_init, true);
+    REPLACE(M, pthread_attr_setdetachstate, true);
+    REPLACE(M, pthread_attr_setguardsize, true);
+    REPLACE(M, pthread_attr_setinheritsched, true);
+    REPLACE(M, pthread_attr_setschedparam, true);
+    REPLACE(M, pthread_attr_setschedpolicy, true);
+    REPLACE(M, pthread_attr_setscope, true);
+    REPLACE(M, pthread_attr_setstacksize, true);
+    REPLACE(M, pthread_barrierattr_destroy, true);
+    REPLACE(M, pthread_barrierattr_init, true);
+    REPLACE(M, pthread_barrierattr_setpshared, true);
+    REPLACE(M, pthread_barrier_destroy, true);
+    REPLACE(M, pthread_barrier_init, true);
+    REPLACE(M, pthread_barrier_wait, true);
+    REPLACE(M, pthread_condattr_destroy, true);
+    REPLACE(M, pthread_condattr_init, true);
+    REPLACE(M, pthread_condattr_setclock, true);
+    REPLACE(M, pthread_condattr_setpshared, true);
+    REPLACE(M, pthread_cond_broadcast, true);
+    REPLACE(M, pthread_cond_destroy, true);
+    REPLACE(M, pthread_cond_init, true);
+    REPLACE(M, pthread_cond_signal, true);
+    REPLACE(M, pthread_cond_wait, true);
+    REPLACE(M, pthread_getattr_np, true);
+    REPLACE(M, pthread_key_create, true);
+    REPLACE(M, pthread_mutexattr_destroy, true);
+    REPLACE(M, pthread_mutexattr_init, true);
+    REPLACE(M, pthread_mutexattr_setprotocol, true);
+    REPLACE(M, pthread_mutexattr_setpshared, true);
+    REPLACE(M, pthread_mutexattr_setrobust, true);
+    REPLACE(M, pthread_mutexattr_settype, true);
+    REPLACE(M, pthread_mutex_consistent, true);
+    REPLACE(M, pthread_mutex_destroy, true);
+    REPLACE(M, pthread_mutex_init, true);
+    REPLACE(M, pthread_mutex_lock, true);
+    REPLACE(M, pthread_mutex_trylock, true);
+    REPLACE(M, pthread_mutex_unlock, true);
+    REPLACE(M, pthread_once, true);
+    REPLACE(M, pthread_rwlockattr_destroy, true);
+    REPLACE(M, pthread_rwlockattr_init, true);
+    REPLACE(M, pthread_rwlockattr_setpshared, true);
+    REPLACE(M, pthread_rwlock_destroy, true);
+    REPLACE(M, pthread_rwlock_init, true);
+    REPLACE(M, pthread_rwlock_rdlock, true);
+    REPLACE(M, pthread_rwlock_tryrdlock, true);
+    REPLACE(M, pthread_rwlock_trywrlock, true);
+    REPLACE(M, pthread_rwlock_unlock, true);
+    REPLACE(M, pthread_rwlock_wrlock, true);
+    REPLACE(M, pthread_sigmask, true);
+    REPLACE(M, sem_destroy, true);
+    REPLACE(M, sem_init, true);
+    REPLACE(M, sem_post, true);
+    REPLACE(M, sem_trywait, true);
+    REPLACE(M, sem_wait, true);
+    REPLACE(M, bind_textdomain_codeset, true);
+    REPLACE(M, catgets, true);
+    REPLACE(M, catopen, true);
+    REPLACE(M, bindtextdomain, true);
+    REPLACE(M, dcngettext, true);
+    REPLACE(M, dcgettext, true);
+    REPLACE(M, dngettext, true);
+    REPLACE(M, dgettext, true);
+    REPLACE(M, gettext, true);
+    REPLACE(M, ngettext, true);
+    REPLACE(M, iconv_open, true);
+    REPLACE(M, iconv, true);
+    REPLACE(M, nl_langinfo_l, true);
+    REPLACE(M, nl_langinfo, true);
+    REPLACE(M, localeconv, true);
+    REPLACE(M, newlocale, true);
+    REPLACE(M, setlocale, true);
+    REPLACE(M, strcoll_l, true);
+    REPLACE(M, strcoll, true);
+    REPLACE(M, strfmon_l, true);
+    REPLACE(M, strfmon, true);
+    REPLACE(M, strxfrm_l, true);
+    REPLACE(M, strxfrm, true);
+    REPLACE(M, textdomain, true);
+    REPLACE(M, wcrtomb, true);
+    // REPLACE(M, __errno_location, true);
+    REPLACE(M, accept, true);
+    REPLACE(M, accept4, true);
+    REPLACE(M, bind, true);
+    REPLACE(M, connect, true);
+    REPLACE(M, gethostent, true);
+    REPLACE(M, getaddrinfo, true);
+    REPLACE(M, freeaddrinfo, true);
+    REPLACE(M, gai_strerror, true);
+    REPLACE(M, gethostbyaddr, true);
+    REPLACE(M, gethostbyaddr_r, true);
+    REPLACE(M, gethostbyname, true);
+    REPLACE(M, gethostbyname2, true);
+    REPLACE(M, gethostbyname2_r, true);
+    REPLACE(M, gethostbyname_r, true);
+    REPLACE(M, freeifaddrs, true);
+    REPLACE(M, getifaddrs, true);
+    REPLACE(M, getnameinfo, true);
+    REPLACE(M, getpeername, true);
+    REPLACE(M, getservbyname, true);
+    REPLACE(M, getservbyname_r, true);
+    REPLACE(M, getservbyport, true);
+    REPLACE(M, getservbyport_r, true);
+    REPLACE(M, getsockname, true);
+    REPLACE(M, getsockopt, true);
+    // REPLACE(M, __h_errno_location, true);
+    REPLACE(M, herror, true);
+    REPLACE(M, hstrerror, true);
+    REPLACE(M, if_freenameindex, true);
+    REPLACE(M, if_nameindex, true);
+    REPLACE(M, if_indextoname, true);
+    REPLACE(M, if_nametoindex, true);
+    REPLACE(M, inet_addr, true);
+    REPLACE(M, inet_aton, true);
+    REPLACE(M, inet_network, true);
+    REPLACE(M, inet_ntoa, true);
+    REPLACE(M, inet_ntop, true);
+    REPLACE(M, inet_pton, true);
+    REPLACE(M, getnetbyaddr, true);
+    REPLACE(M, getnetbyname, true);
+    REPLACE(M, getprotoent, true);
+    REPLACE(M, getprotobyname, true);
+    REPLACE(M, getprotobynumber, true);
+    REPLACE(M, recv, true);
+    REPLACE(M, recvfrom, true);
+    REPLACE(M, recvmsg, true);
+    REPLACE(M, send, true);
+    REPLACE(M, sendmsg, true);
+    REPLACE(M, sendto, true);
+    REPLACE(M, getservent, true);
+    REPLACE(M, setsockopt, true);
+    REPLACE(M, socketpair, true);
+    REPLACE(M, epoll_ctl, true);
+    REPLACE(M, epoll_wait, true);
+    REPLACE(M, epoll_pwait, true);
+    REPLACE(M, sendfile, true);
+    REPLACE(M, mkdtemp, true);
+    REPLACE(M, mkostemp, true);
+    REPLACE(M, mkostemp64, true);
+    REPLACE(M, mkostemps, true);
+    REPLACE(M, mkostemps64, true);
+    REPLACE(M, mkstemp, true);
+    REPLACE(M, mkstemp64, true);
+    REPLACE(M, mkstemps, true);
+    REPLACE(M, mkstemps64, true);
+    REPLACE(M, mktemp, true);
+    REPLACE(M, fgetgrent, true);
+    REPLACE(M, fgetpwent, true);
+    REPLACE(M, fgetspent, true);
+    REPLACE(M, getgrent, true);
+    REPLACE(M, getgrgid, true);
+    REPLACE(M, getgrnam, true);
+    REPLACE(M, getgrouplist, true);
+    REPLACE(M, getgrnam_r, true);
+    REPLACE(M, getgrgid_r, true);
+    REPLACE(M, getpwent, true);
+    REPLACE(M, getpwuid, true);
+    REPLACE(M, getpwnam, true);
+    REPLACE(M, getpwnam_r, true);
+    REPLACE(M, getpwuid_r, true);
+    REPLACE(M, getspnam, true);
+    REPLACE(M, getspnam_r, true);
+    REPLACE(M, putgrent, true);
+    REPLACE(M, putpwent, true);
+    REPLACE(M, putspent, true);
+    REPLACE(M, modf, true);
+    REPLACE(M, frexp, true);
+    REPLACE(M, getitimer, true);
+    REPLACE(M, psiginfo, true);
+    REPLACE(M, psignal, true);
+    REPLACE(M, setitimer, true);
+    REPLACE(M, sigaction, true);
+    REPLACE(M, sigaddset, true);
+    REPLACE(M, sigaltstack, true);
+    REPLACE(M, sigandset, true);
+    REPLACE(M, sigdelset, true);
+    REPLACE(M, sigemptyset, true);
+    REPLACE(M, sigfillset, true);
+    REPLACE(M, sigisemptyset, true);
+    REPLACE(M, sigismember, true);
+    REPLACE(M, sigsetjmp, true);
+    REPLACE(M, siglongjmp, true);
+    REPLACE(M, sigorset, true);
+    REPLACE(M, sigpending, true);
+    REPLACE(M, sigprocmask, true);
+    REPLACE(M, sigsuspend, true);
+    REPLACE(M, sigwait, true);
+    REPLACE(M, sigtimedwait, true);
+    REPLACE(M, sigwaitinfo, true);
+    REPLACE(M, semop, true);
+    REPLACE(M, semtimedop, true);
+    REPLACE(M, mbtowc, true);
+    REPLACE(M, mblen, true);
+    REPLACE(M, wcstombs, true);
+    REPLACE(M, mbstowcs, true);
 }
 
 /*
@@ -1188,6 +1761,10 @@ static void addLowFatFuncs(Module *M)
     if (F != nullptr)
     {
         BasicBlock *Entry = BasicBlock::Create(M->getContext(), "", F);
+        
+        // 有non-fat操作的
+        BasicBlock *Error = BasicBlock::Create(M->getContext(), "", F);
+        BasicBlock *Right = BasicBlock::Create(M->getContext(), "", F);
         // BasicBlock *Stack  = BasicBlock::Create(M->getContext(), "", F);
         // BasicBlock *Heap = BasicBlock::Create(M->getContext(), "", F);
         IRBuilder<> builder(Entry);
@@ -1196,12 +1773,33 @@ static void addLowFatFuncs(Module *M)
         Ptr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
         Value *size_base = builder.CreateAnd(Ptr,0xFC00000000000000);
         size_base = builder.CreateLShr(size_base,58);
-        Value *size = builder.CreateShl(builder.getInt64(1),size_base);
+        // Value *size = builder.CreateShl(builder.getInt64(1),size_base);
+        Value *Eql = builder.CreateICmpEQ(size_base,builder.getInt64(0));
+        builder.CreateCondBr(Eql, Error, Right);
 
-        // Value *mask = builder.CreateShl(builder.getInt64(0xFFFFFFFFFFFFFFFF),size);
-        Value *BasePtr = builder.CreateAnd(size,Ptr);
-        BasePtr = builder.CreateBitCast(BasePtr,builder.getInt8PtrTy());
-        builder.CreateRet(BasePtr);
+        IRBuilder<> builder2(Error);
+        Value* NULL_RETURN = builder2.getInt64(0xFFFFFFFFFFFFFFFF);
+        NULL_RETURN = builder2.CreateBitCast(NULL_RETURN,builder2.getInt8PtrTy());
+        builder2.CreateRet(NULL_RETURN);
+        
+
+        IRBuilder<> builder3(Right);
+        Value *mask = builder3.CreateShl(builder3.getInt64(0xFFFFFFFFFFFFFFFF),size_base);
+        Value *BasePtr = builder3.CreateAnd(mask,Ptr);
+        BasePtr = builder3.CreateBitCast(BasePtr,builder3.getInt8PtrTy());
+        builder3.CreateRet(BasePtr);
+
+
+        // IRBuilder<> builder(Entry);
+
+        // Value *Ptr = &F->getArgumentList().front();
+        // Ptr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
+        // Value *size_base = builder.CreateAnd(Ptr,0xFC00000000000000);
+        // size_base = builder.CreateLShr(size_base,58);
+        // Value *mask = builder.CreateShl(builder.getInt64(0xFFFFFFFFFFFFFFFF),size_base);
+        // Value *BasePtr = builder.CreateAnd(mask,Ptr);
+        // BasePtr = builder.CreateBitCast(BasePtr,builder.getInt8PtrTy());
+        // builder.CreateRet(BasePtr);
         
         // 特定时期的某个中间版本，已经不需要
 //         Value *Cmp = builder.CreateICmpEQ(size, builder.getInt64(1));
@@ -1255,8 +1853,9 @@ static void addLowFatFuncs(Module *M)
         BasicBlock *Error  = BasicBlock::Create(M->getContext(), "", F);
         BasicBlock *Return = BasicBlock::Create(M->getContext(), "", F);
         
-        BasicBlock *NullReturn = BasicBlock::Create(M->getContext(), "", F);
-        BasicBlock *NullGo = BasicBlock::Create(M->getContext(), "", F);
+        // 多一次判断时使用
+        // BasicBlock *NullReturn = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *NullGo = BasicBlock::Create(M->getContext(), "", F);
 
         IRBuilder<> builder(Entry);
         auto i = F->getArgumentList().begin();
@@ -1275,35 +1874,59 @@ static void addLowFatFuncs(Module *M)
         Value *IBasePtr = builder.CreatePtrToInt(BasePtr,
             builder.getInt64Ty());
 
-        Value *Eql = builder.CreateICmpEQ(BasePtr,builder.getInt64(0));
-        builder.CreateCondBr(Eql, NullReturn, NullGo);
+        // 判断是否是non-fat 但是如果是non-fat 按照原本算结果一样
+        // Value *first_size_base = builder.CreateAnd(IBasePtr,0xFC00000000000000);
+        // first_size_base = builder.CreateLShr(first_size_base,58);
+        // Value *Eql = builder.CreateICmpEQ(first_size_base,builder.getInt64(0));
+        // builder.CreateCondBr(Eql, NullReturn, NullGo);
 
-        IRBuilder<> builder4(NullReturn);
-        builder4.CreateRetVoid();
+        // IRBuilder<> builder4(NullReturn);
+        // builder4.CreateRetVoid();
 
-        // Value *Idx = builder.CreateLShr(IBasePtr,
-        //     builder.getInt64(LOWFAT_REGION_SIZE_SHIFT));
-        // Value *Sizes = builder.CreateIntToPtr(
-        //     builder.getInt64((uint64_t)_LOWFAT_SIZES),
-        //     builder.getInt64Ty()->getPointerTo());
-        // Value *SizePtr = builder.CreateGEP(Sizes, Idx);
-        // Value *Size = builder.CreateAlignedLoad(SizePtr, sizeof(size_t));
+        // // Value *Idx = builder.CreateLShr(IBasePtr,
+        // //     builder.getInt64(LOWFAT_REGION_SIZE_SHIFT));
+        // // Value *Sizes = builder.CreateIntToPtr(
+        // //     builder.getInt64((uint64_t)_LOWFAT_SIZES),
+        // //     builder.getInt64Ty()->getPointerTo());
+        // // Value *SizePtr = builder.CreateGEP(Sizes, Idx);
+        // // Value *Size = builder.CreateAlignedLoad(SizePtr, sizeof(size_t));
+
+        // // 添加我们的size获取方式 计算size是必须根据baseptr计算，新ptr不计算
+        // IRBuilder<> builder5(NullGo);
+        // BasePtr = builder5.CreateBitCast(BasePtr, builder5.getInt64Ty());
+        // Value *size_base = builder5.CreateAnd(BasePtr,0xFC00000000000000);
+        // size_base = builder5.CreateLShr(size_base,58);
+        // Value *Size = builder5.CreateShl(builder5.getInt64(1),size_base);
+        // BasePtr = builder5.CreateBitCast(BasePtr, builder5.getInt8PtrTy());
+        
+        // // The check is: if (ptr - base > size - sizeof(*ptr)) error();
+        // Value *IPtr = builder5.CreatePtrToInt(Ptr, builder5.getInt64Ty());
+        // Value *Diff = builder5.CreateSub(IPtr, IBasePtr);
+        // Size = builder5.CreateSub(Size, AccessSize);
+        // Value *Cmp = builder5.CreateICmpUGE(Diff, Size);
+        // builder5.CreateCondBr(Cmp, Error, Return);
+
 
         // 添加我们的size获取方式 计算size是必须根据baseptr计算，新ptr不计算
-        IRBuilder<> builder5(NullGo);
-        BasePtr = builder5.CreateBitCast(BasePtr, builder5.getInt64Ty());
-        Value *size_base = builder5.CreateAnd(BasePtr,0xFC00000000000000);
-        size_base = builder5.CreateLShr(size_base,58);
-        Value *Size = builder5.CreateShl(builder5.getInt64(1),size_base);
-        BasePtr = builder5.CreateBitCast(BasePtr, builder5.getInt8PtrTy());
+        BasePtr = builder.CreateBitCast(BasePtr, builder.getInt64Ty());
+        Value *size_base = builder.CreateAnd(BasePtr,0xFC00000000000000);
+        size_base = builder.CreateLShr(size_base,58);
+        Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
+        BasePtr = builder.CreateBitCast(BasePtr, builder.getInt8PtrTy());
         
         // The check is: if (ptr - base > size - sizeof(*ptr)) error();
-        Value *IPtr = builder5.CreatePtrToInt(Ptr, builder5.getInt64Ty());
-        Value *Diff = builder5.CreateSub(IPtr, IBasePtr);
-        Size = builder5.CreateSub(Size, AccessSize);
-        Value *Cmp = builder5.CreateICmpUGE(Diff, Size);
-        builder5.CreateCondBr(Cmp, Error, Return);
+        Value *IPtr = builder.CreatePtrToInt(Ptr, builder.getInt64Ty());
+        Value *Diff = builder.CreateSub(IPtr, IBasePtr);
+        Size = builder.CreateSub(Size, AccessSize);
+        Value *Cmp = builder.CreateICmpUGE(Diff, Size);
+        builder.CreateCondBr(Cmp, Error, Return);
+        // Ptr = builder.CreateSelect(Cmp,BasePtr,Ptr);
         
+        
+
+        // Value* Result = builder.CreateSelect(Cmp,Error,Warning);
+        // builder.CreateCall(Result, {Info, Ptr, BasePtr});
+          
         IRBuilder<> builder2(Error);
         if (!option_no_abort)
         {
@@ -1312,6 +1935,7 @@ static void addLowFatFuncs(Module *M)
                 builder2.getInt8PtrTy(), builder2.getInt8PtrTy(), nullptr);
             CallInst *Call = builder2.CreateCall(Error, {Info, Ptr, BasePtr});
             Call->setDoesNotReturn();
+            builder2.CreateRetVoid();
             builder2.CreateUnreachable();
         }
         else
@@ -1788,17 +2412,19 @@ static void makeAllocaLowFatPtr(Module *M, Instruction *I)
     Value *Ptr = builder.CreateBitCast(AllocedPtr, builder.getInt8PtrTy());
     Value *package = M->getOrInsertFunction("minifat_pointer_package",
         builder.getInt8PtrTy(), builder.getInt8PtrTy(), builder.getInt64Ty(),
-        nullptr);
+        nullptr); 
     if(ISize != nullptr)
         Ptr = builder.CreateCall(package, {Ptr, builder.getInt64(newSize)});
     else
         Ptr = builder.CreateCall(package, {Ptr, Size});
     Ptr = builder.CreateBitCast(Ptr, Alloca->getType());
+    // AllocedPtr = builder.CreateBitCast(AllocedPtr, Alloca->getType());
 
     // Replace all uses of `Alloca' with the (now low-fat) `Ptr'.
     // We do not replace lifetime intrinsics nor values used in the
     // construction of the low-fat pointer (NoReplace1, ...).
     vector<User *> replace, lifetimes;
+    vector<User *> ls_replace;
     for (User *Usr: Alloca->users())
     {
         if (Usr == NoReplace1 || Usr == NoReplace2)
@@ -1824,11 +2450,17 @@ static void makeAllocaLowFatPtr(Module *M, Instruction *I)
                     lifetimes.push_back(Usr2);
             }
         }
-        replace.push_back(Usr);
+        // if(dyn_cast<LoadInst>(Usr) || dyn_cast<StoreInst>(Usr))
+        //     ls_replace.push_back(Usr);
+        // else
+            replace.push_back(Usr);
     }
     
     for (User *Usr: replace)
         Usr->replaceUsesOfWith(Alloca, Ptr);
+    // for (User *Usr: ls_replace)
+    //     Usr->replaceUsesOfWith(Alloca, AllocedPtr);
+
     for (User *Usr: lifetimes)
     {
         // Lifetimes are deleted.  The alternative is to insert the mirroring
@@ -1858,6 +2490,35 @@ static bool isBlacklisted(SpecialCaseList *SCL, Function *F)
         return false;
     return SCL->inSection("fun", F->getName());
 }
+
+static void maskCmpInst(Instruction *I)
+{
+    if (I->getMetadata("nosanitize") != nullptr)
+        return;
+    if (CmpInst  *Cmp = dyn_cast<CmpInst >(I))
+    {
+        Value *Arg1 = Cmp->getOperand(0);
+        Value *Arg2 = Cmp->getOperand(1);
+
+        if (!Arg1->getType()->isPointerTy())
+            return;
+        
+        IRBuilder<> builder(Cmp);
+        Value* TArg1 = builder.CreateBitCast(Arg1, builder.getInt64Ty());
+        TArg1 = builder.CreateAnd(TArg1,0x03FFFFFFFFFFFFFF);
+        TArg1 = builder.CreateBitCast(TArg1, Arg1->getType());
+        auto OI = Cmp->op_begin();
+        *OI = TArg1;
+        
+        Value* TArg2 = builder.CreateBitCast(Arg2, builder.getInt64Ty());
+        TArg2 = builder.CreateAnd(TArg2,0x03FFFFFFFFFFFFFF);
+        TArg2 = builder.CreateBitCast(TArg2, Arg2->getType());
+        OI++;
+        *OI = TArg2;
+        
+    }
+}
+
 
 /*
  * LowFat LLVM Pass
@@ -1941,9 +2602,9 @@ struct LowFat : public ModulePass
         }
 
         // Pass (1b) Global Variable lowfatification
-        if (!option_no_replace_globals)
-            for (auto &GV: M.getGlobalList())
-                makeGlobalVariableLowFatPtr(&M, &GV);
+        // if (!option_no_replace_globals)
+        //     for (auto &GV: M.getGlobalList())
+        //         makeGlobalVariableLowFatPtr(&M, &GV);
 
         // PASS (2): Replace unsafe library calls
         replaceUnsafeLibFuncs(&M);
@@ -1963,6 +2624,20 @@ struct LowFat : public ModulePass
             for (auto &I: dels)
                 I->eraseFromParent();
         }
+
+        for (auto &F: M)
+        {
+            if (F.isDeclaration())
+                continue;
+            if (isBlacklisted(Blacklist.get(), &F))
+                continue;
+
+            // STEP #1: Find all instructions that we need to instrument:
+            for (auto &BB: F)
+                for (auto &I: BB)
+                    maskCmpInst(&I);
+        }
+
 
         if (option_debug)
         {

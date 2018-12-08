@@ -41,6 +41,9 @@ extern "C"
 #define LOWFAT_OOB_ERROR_ESCAPE_STORE       7
 #define LOWFAT_OOB_ERROR_ESCAPE_PTR2INT     8
 #define LOWFAT_OOB_ERROR_ESCAPE_INSERT      9
+#define MINIFAT_PTR_INVALID                 0xA
+#define LOWFAT_OOB_ERROR_MEMCPY_ONE         0xB
+#define LOWFAT_OOB_ERROR_MEMCPY_TWO         0xC
 #define LOWFAT_OOB_ERROR_UNKNOWN            0xFF
 
 #include <lowfat_config.h>
@@ -58,9 +61,11 @@ static inline _LOWFAT_CONST _LOWFAT_INLINE void *minifat_base(const void *_ptr)
 {
     unsigned long size_base = MINIFAT_MASK & (unsigned long)_ptr;
     size_base = size_base >> (64 - MINIFAT_BASE_SIZE);
-    unsigned long size = 1 << size_base;
-    // unsigned long mask = 0xFFFFFFFFFFFFFFFF << size;
-    return (void *)(size & (unsigned long)_ptr);
+    // unsigned long size = 1 << size_base;
+    if(size_base == 0) 
+        return NULL;
+    unsigned long mask = 0xFFFFFFFFFFFFFFFF << size_base;
+    return (void *)(mask & (unsigned long)_ptr);
 }
 
 static inline _LOWFAT_CONST _LOWFAT_INLINE size_t minifat_size(const void *_ptr)

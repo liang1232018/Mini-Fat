@@ -23,6 +23,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <pthread.h>
 
 #define LOWFAT_PAGE_SIZE        4096
 #define LOWFAT_MAX_ADDRESS      0x1000000000000ull
@@ -71,6 +72,8 @@ static LOWFAT_DATA char **lowfat_envp = NULL;
 #include "lowfat_threads.c"
 #include "lowfat_malloc.c"
 #include "lowfat_memops.c"
+#include "lowfat_func.c"
+#include "lowfat_wrappers.c"
 #if !defined(LOWFAT_NO_MEMORY_ALIAS) && !defined(LOWFAT_STANDALONE)
 #include "lowfat_fork.c"
 #endif
@@ -382,7 +385,7 @@ extern inline size_t lowfat_index(void *ptr);
 extern inline size_t lowfat_size(void *ptr);
 extern inline size_t lowfat_buffer_size(void *ptr);
 
-extern inline size_t minifat_index(const void *ptr);
+// extern inline size_t minifat_index(const void *ptr);
 extern inline size_t minifat_size(const void *ptr);
 extern inline size_t minifat_buffer_size(const void *ptr);
 
@@ -480,9 +483,9 @@ static LOWFAT_NOINLINE const char *lowfat_error_kind(unsigned info)
 extern LOWFAT_NORETURN void lowfat_oob_error(unsigned info,
     const void *ptr, const void *baseptr)
 {
-    // printf("%p %p\n",ptr,baseptr);
-    // printf("%s\n",lowfat_kind(ptr));
     const char *kind = lowfat_error_kind(info);
+     if(minifat_size(baseptr) <= 1)
+        return ;
     ssize_t overflow = (ssize_t)((unsigned long)ptr & MINIFAT_MATCH) - (ssize_t)((unsigned long)baseptr & MINIFAT_MATCH);
     if (overflow > 0)
         overflow -= /*lowfat_size*/minifat_size(baseptr);
@@ -501,6 +504,8 @@ extern void lowfat_oob_warning(unsigned info,
     const void *ptr, const void *baseptr)
 {
     const char *kind = lowfat_error_kind(info);
+    if(minifat_size(baseptr) <= 1)
+        return ;
     ssize_t overflow = (ssize_t)((unsigned long)ptr & MINIFAT_MATCH) - (ssize_t)((unsigned long)baseptr & MINIFAT_MATCH);
     if (overflow > 0)
         overflow -= /*lowfat_size*/minifat_size(baseptr);

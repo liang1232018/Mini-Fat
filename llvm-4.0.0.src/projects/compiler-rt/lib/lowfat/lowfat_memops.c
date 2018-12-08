@@ -20,6 +20,7 @@
 extern void *lowfat_memset(void *dst, int c, size_t n)
 {
     size_t size = minifat_buffer_size(dst);
+    printf("wrong way\n");
     if (size < n)
         lowfat_oob_error(LOWFAT_OOB_ERROR_MEMSET, (uint8_t *)dst + size,
             /*lowfat_base*/minifat_base(dst));

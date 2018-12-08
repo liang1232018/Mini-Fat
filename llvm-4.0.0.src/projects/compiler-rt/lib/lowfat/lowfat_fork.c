@@ -154,7 +154,7 @@ static LOWFAT_NOINLINE pid_t lowfat_fork_wrapper(void *stack_tmp,
 /*
  * LOWFAT fork()
  */
-extern pid_t fork(void) LOWFAT_ALIAS("lowfat_fork");
+// extern pid_t fork(void) LOWFAT_ALIAS("lowfat_fork");
 extern pid_t lowfat_fork(void)
 {
     // STEP (1): Create a temporary stack for the child:

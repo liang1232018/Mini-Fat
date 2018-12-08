@@ -240,7 +240,7 @@ extern void *lowfat_malloc(size_t size) {
 
 extern void *minifat_malloc(size_t size) {
     uint64_t coded_size = (64 - clz((uint64_t)size)) & 0x3F;
-    uint64_t alloc_size = 1 << coded_size;
+    uint64_t alloc_size = 1ull << coded_size;
     void *ptr = NULL;
     if (posix_memalign(&ptr, alloc_size, alloc_size)) {
         return lowfat_fallback_malloc(size);
@@ -328,39 +328,39 @@ extern void minifat_free(void *ptr) {
  * Stdlib malloc() and free() replacements.
  */
 
-#ifndef LOWFAT_NO_REPLACE_STD_FREE
-// free()/realloc() should always be intercepted.  This handles the case where
-// memory is allocated by the main program, but free'ed by an uninstrumented
-// library.
-extern void free(void *ptr) LOWFAT_ALIAS("lowfat_free");
-extern void *realloc(void *ptr, size_t size) LOWFAT_ALIAS("lowfat_realloc");
-extern void _ZdlPv(void *ptr) LOWFAT_ALIAS("lowfat_free");
-extern void _ZdaPv(void *ptr) LOWFAT_ALIAS("lowfat_free");
-#endif      /* LOWFAT_NO_REPLACE_STD_FREE */
+// #ifndef LOWFAT_NO_REPLACE_STD_FREE
+// // free()/realloc() should always be intercepted.  This handles the case where
+// // memory is allocated by the main program, but free'ed by an uninstrumented
+// // library.
+// extern void free(void *ptr) LOWFAT_ALIAS("lowfat_free");
+// extern void *realloc(void *ptr, size_t size) LOWFAT_ALIAS("lowfat_realloc");
+// extern void _ZdlPv(void *ptr) LOWFAT_ALIAS("lowfat_free");
+// extern void _ZdaPv(void *ptr) LOWFAT_ALIAS("lowfat_free");
+// #endif      /* LOWFAT_NO_REPLACE_STD_FREE */
 
-#ifndef LOWFAT_NO_REPLACE_STD_MALLOC
-extern void *malloc(size_t size) LOWFAT_ALIAS("lowfat_malloc");
-extern void *calloc(size_t nmemb, size_t size) LOWFAT_ALIAS("lowfat_calloc");
-// extern int posix_memalign(void **memptr, size_t align, size_t size)
-//     LOWFAT_ALIAS("lowfat_posix_memalign");
-// extern void *memalign(size_t align, size_t size)
-//     LOWFAT_ALIAS("lowfat_memalign");
-// extern void *valloc(size_t size) LOWFAT_ALIAS("lowfat_valloc");
-// extern void *pvalloc(size_t size) LOWFAT_ALIAS("lowfat_pvalloc");
-extern void *_Znwm(size_t size) LOWFAT_ALIAS("lowfat_malloc");
-extern void *_Znam(size_t size) LOWFAT_ALIAS("lowfat_malloc");
-extern void *_ZnwmRKSt9nothrow_t(size_t size) LOWFAT_ALIAS("lowfat_malloc");
-extern void *_ZnamRKSt9nothrow_t(size_t size) LOWFAT_ALIAS("lowfat_malloc");
-#ifdef __strdup
-#undef __strdup
-#endif
-extern char *__strdup(const char *str) LOWFAT_ALIAS("lowfat_strdup");
-#ifdef __strndup
-#undef __strndup
-#endif
-extern char *__strndup(const char *str, size_t n)
-	LOWFAT_ALIAS("lowfat_strndup");
-#endif      /* LOWFAT_NO_REPLACE_STD_MALLOC */
+// #ifndef LOWFAT_NO_REPLACE_STD_MALLOC
+// extern void *malloc(size_t size) LOWFAT_ALIAS("lowfat_malloc");
+// extern void *calloc(size_t nmemb, size_t size) LOWFAT_ALIAS("lowfat_calloc");
+// // extern int posix_memalign(void **memptr, size_t align, size_t size)
+// //     LOWFAT_ALIAS("lowfat_posix_memalign");
+// // extern void *memalign(size_t align, size_t size)
+// //     LOWFAT_ALIAS("lowfat_memalign");
+// // extern void *valloc(size_t size) LOWFAT_ALIAS("lowfat_valloc");
+// // extern void *pvalloc(size_t size) LOWFAT_ALIAS("lowfat_pvalloc");
+// extern void *_Znwm(size_t size) LOWFAT_ALIAS("lowfat_malloc");
+// extern void *_Znam(size_t size) LOWFAT_ALIAS("lowfat_malloc");
+// extern void *_ZnwmRKSt9nothrow_t(size_t size) LOWFAT_ALIAS("lowfat_malloc");
+// extern void *_ZnamRKSt9nothrow_t(size_t size) LOWFAT_ALIAS("lowfat_malloc");
+// #ifdef __strdup
+// #undef __strdup
+// #endif
+// extern char *__strdup(const char *str) LOWFAT_ALIAS("lowfat_strdup");
+// #ifdef __strndup
+// #undef __strndup
+// #endif
+// extern char *__strndup(const char *str, size_t n)
+// 	LOWFAT_ALIAS("lowfat_strndup");
+// #endif      /* LOWFAT_NO_REPLACE_STD_MALLOC */
 
 /*
  * LOWFAT realloc()
@@ -445,6 +445,58 @@ extern void *lowfat_calloc(size_t nmemb, size_t size)
     return ptr;
 }
 
+extern void *minifat_memset(void *dest, int c, size_t n);
+extern void *minifat_memcpy(void *__restrict__ dest, const void *__restrict__ src, size_t n);
+
+/*
+* MINIFAT realloc()
+* For now, we assume that the pointer given to realloc() points to the beginning of the object
+*/
+extern void *minifat_realloc(void *ptr, uint64_t size) {
+    if (ptr == NULL || size == 0)
+        return minifat_malloc(size);
+    void *newptr = minifat_malloc(size);
+    if (newptr == NULL)
+        return NULL;
+
+    uint64_t cpy_size;
+    if (size < 8) {
+        cpy_size = 8;
+    }
+    else {
+        cpy_size = 1 << ((64 - clz(size)) & 0x3F);
+    }
+
+    uint64_t ptr_size = 1 << (((uint64_t)ptr >> 58) & 0x3F);
+    cpy_size = (cpy_size < ptr_size ? cpy_size : ptr_size);
+    // there may be a fatal problem with memcpy
+    minifat_memcpy(newptr, ptr, cpy_size);
+    minifat_free(ptr);
+    ptr = NULL;
+
+    return newptr;
+}
+
+
+/*
+* LOWFAT calloc()
+*/
+// extern void *lowfat_calloc(size_t nmemb, size_t size)
+// {
+// void *ptr = lowfat_malloc(nmemb * size);
+// memset(ptr, 0, nmemb * size);
+// return ptr;
+// }
+
+/*
+* MINIFAT calloc()
+*/
+extern void *minifat_calloc(size_t nmemb, size_t size) {
+void *ptr = minifat_malloc(nmemb * size);
+    minifat_memset(ptr, 0, nmemb * size);
+    return ptr;
+}
+
 /*
  * LOWFAT posix_memalign()
  */
@@ -505,34 +557,34 @@ extern void *lowfat_calloc(size_t nmemb, size_t size)
 /*
  * LOWFAT C++ new
  */
-extern void *lowfat__Znwm(size_t size) LOWFAT_ALIAS("lowfat_malloc");
+// extern void *lowfat__Znwm(size_t size) LOWFAT_ALIAS("lowfat_malloc");
 
 /*
  * LOWFAT C++ new[]
  */
-extern void *lowfat__Znam(size_t size) LOWFAT_ALIAS("lowfat_malloc");
+// extern void *lowfat__Znam(size_t size) LOWFAT_ALIAS("lowfat_malloc");
 
 /*
  * LOWFAT C++ new nothrow
  */
-extern void *lowfat__ZnwmRKSt9nothrow_t(size_t size)
-    LOWFAT_ALIAS("lowfat_malloc");
+// extern void *lowfat__ZnwmRKSt9nothrow_t(size_t size)
+    // LOWFAT_ALIAS("lowfat_malloc");
 
 /*
  * LOWFAT C++ new[] nothrow
  */
-extern void *lowfat__ZnamRKSt9nothrow_t(size_t size)
-    LOWFAT_ALIAS("lowfat_malloc");
+// extern void *lowfat__ZnamRKSt9nothrow_t(size_t size)
+//     LOWFAT_ALIAS("lowfat_malloc");
 
 /*
  * LOWFAT C++ delete
  */
-extern void lowfat__ZdlPv(void *ptr) LOWFAT_ALIAS("lowfat_free");
+// extern void lowfat__ZdlPv(void *ptr) LOWFAT_ALIAS("lowfat_free");
 
 /*
  * LOWFAT C++ delete[]
  */
-extern void lowfat__ZdaPv(void *ptr) LOWFAT_ALIAS("lowfat_free");
+// extern void lowfat__ZdaPv(void *ptr) LOWFAT_ALIAS("lowfat_free");
 
 /*
  * LOWFAT strdup()
