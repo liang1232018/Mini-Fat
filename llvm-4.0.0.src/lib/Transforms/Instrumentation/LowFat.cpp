@@ -1146,7 +1146,7 @@ static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
 #define REPLACE2(M, N, alloc)                                           \
     do {                                                                \
         if (Function *F0 = (M)->getFunction(N)) {                       \
-            Value *F1 = (M)->getOrInsertFunction("minifat_" N,           \
+            Value *F1 = (M)->getOrInsertFunction("minifat_" N,          \
                 F0->getFunctionType());                                 \
             F0->replaceAllUsesWith(F1);                                 \
             Function *F2 = dyn_cast<Function>(F1);                      \
@@ -1158,6 +1158,22 @@ static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
         }                                                               \
     } while (false);
 #define REPLACE(M, F, alloc)      REPLACE2(M, STRING(F), alloc)
+#define REPLACE_SPECIAL(M, N,NN, alloc)                                 \
+    do {                                                                \
+        if (Function *F0 = (M)->getFunction(N)) {                       \
+            Value *F1 = (M)->getOrInsertFunction(NN,                    \
+                F0->getFunctionType());                                 \
+            F0->replaceAllUsesWith(F1);                                 \
+            Function *F2 = dyn_cast<Function>(F1);                      \
+            if ((alloc) && F2 != nullptr) {                             \
+                F2->setDoesNotAlias(0);                                 \
+                F2->setDoesNotThrow();                                  \
+                F2->addAttribute(0, Attribute::NonNull);                \
+            }                                                           \
+        }                                                               \
+    } while (false);
+
+
 static void replaceUnsafeLibFuncs(Module *M)
 {
     REPLACE(M, memset, false);
@@ -1706,6 +1722,9 @@ static void replaceUnsafeLibFuncs(Module *M)
     REPLACE(M, mblen, true);
     REPLACE(M, wcstombs, true);
     REPLACE(M, mbstowcs, true);
+
+    REPLACE_SPECIAL(M, "__isoc99_sscanf", "minifat_sscanf",true)
+
 }
 
 /*
