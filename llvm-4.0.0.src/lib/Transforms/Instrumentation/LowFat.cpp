@@ -2510,7 +2510,12 @@ static bool isBlacklisted(SpecialCaseList *SCL, Function *F)
     return SCL->inSection("fun", F->getName());
 }
 
-static void maskCmpInst(Instruction *I)
+
+/*
+* Minifat_Pass
+* this function is for some usecases need to mask the ptr
+*/
+static void maskInst(Instruction *I)
 {
     if (I->getMetadata("nosanitize") != nullptr)
         return;
@@ -2536,6 +2541,25 @@ static void maskCmpInst(Instruction *I)
         *OI = TArg2;
         
     }
+    else if(CallInst *Call = dyn_cast<CallInst >(I)) {
+        Function *F = Call->getCalledFunction();
+        if (F != nullptr && F->getName() == "minifat_sscanf") {
+            IRBuilder<> builder(Call);
+            auto OI = Call->op_begin();
+            for (unsigned i = 2; i < Call->getNumArgOperands(); i++)
+            {
+                Value *Arg = Call->getArgOperand(i);
+                Value* TArg = builder.CreateBitCast(Arg, builder.getInt64Ty());
+                TArg = builder.CreateAnd(TArg,0x03FFFFFFFFFFFFFF);
+                TArg = builder.CreateBitCast(TArg, Arg->getType());
+
+                *(OI+i) = TArg;
+                
+            }
+        }
+
+    }
+
 }
 
 
@@ -2654,7 +2678,7 @@ struct LowFat : public ModulePass
             // STEP #1: Find all instructions that we need to instrument:
             for (auto &BB: F)
                 for (auto &I: BB)
-                    maskCmpInst(&I);
+                    maskInst(&I);
         }
 
 
