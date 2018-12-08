@@ -1126,14 +1126,15 @@ static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
             OI++;
             *OI = TPtr;
         }
-    } else if (InsertElementInst *Insert = dyn_cast<InsertElementInst>(I)) {
-        TPtr = builder.CreateBitCast(TPtr, builder.getInt64Ty());
-        TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
-        TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
-        auto OI = Insert->op_begin();
-        OI++;
-        *OI = TPtr;
-    }
+    } 
+    // else if (InsertElementInst *Insert = dyn_cast<InsertElementInst>(I)) {
+    //     TPtr = builder.CreateBitCast(TPtr, builder.getInt64Ty());
+    //     TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
+    //     TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
+    //     auto OI = Insert->op_begin();
+    //     OI++;
+    //     *OI = TPtr;
+    // }
     
 }
 
@@ -1873,8 +1874,8 @@ static void addLowFatFuncs(Module *M)
         BasicBlock *Return = BasicBlock::Create(M->getContext(), "", F);
         
         // 多一次判断时使用
-        // BasicBlock *NullReturn = BasicBlock::Create(M->getContext(), "", F);
-        // BasicBlock *NullGo = BasicBlock::Create(M->getContext(), "", F);
+        BasicBlock *NullReturn = BasicBlock::Create(M->getContext(), "", F);
+        BasicBlock *NullGo = BasicBlock::Create(M->getContext(), "", F);
 
         IRBuilder<> builder(Entry);
         auto i = F->getArgumentList().begin();
@@ -1894,51 +1895,51 @@ static void addLowFatFuncs(Module *M)
             builder.getInt64Ty());
 
         // 判断是否是non-fat 但是如果是non-fat 按照原本算结果一样
-        // Value *first_size_base = builder.CreateAnd(IBasePtr,0xFC00000000000000);
-        // first_size_base = builder.CreateLShr(first_size_base,58);
-        // Value *Eql = builder.CreateICmpEQ(first_size_base,builder.getInt64(0));
-        // builder.CreateCondBr(Eql, NullReturn, NullGo);
+        Value *first_size_base = builder.CreateAnd(IBasePtr,0xFC00000000000000);
+        first_size_base = builder.CreateLShr(first_size_base,58);
+        Value *Eql = builder.CreateICmpEQ(first_size_base,builder.getInt64(0));
+        builder.CreateCondBr(Eql, NullReturn, NullGo);
 
-        // IRBuilder<> builder4(NullReturn);
-        // builder4.CreateRetVoid();
+        IRBuilder<> builder4(NullReturn);
+        builder4.CreateRetVoid();
 
-        // // Value *Idx = builder.CreateLShr(IBasePtr,
-        // //     builder.getInt64(LOWFAT_REGION_SIZE_SHIFT));
-        // // Value *Sizes = builder.CreateIntToPtr(
-        // //     builder.getInt64((uint64_t)_LOWFAT_SIZES),
-        // //     builder.getInt64Ty()->getPointerTo());
-        // // Value *SizePtr = builder.CreateGEP(Sizes, Idx);
-        // // Value *Size = builder.CreateAlignedLoad(SizePtr, sizeof(size_t));
-
-        // // 添加我们的size获取方式 计算size是必须根据baseptr计算，新ptr不计算
-        // IRBuilder<> builder5(NullGo);
-        // BasePtr = builder5.CreateBitCast(BasePtr, builder5.getInt64Ty());
-        // Value *size_base = builder5.CreateAnd(BasePtr,0xFC00000000000000);
-        // size_base = builder5.CreateLShr(size_base,58);
-        // Value *Size = builder5.CreateShl(builder5.getInt64(1),size_base);
-        // BasePtr = builder5.CreateBitCast(BasePtr, builder5.getInt8PtrTy());
-        
-        // // The check is: if (ptr - base > size - sizeof(*ptr)) error();
-        // Value *IPtr = builder5.CreatePtrToInt(Ptr, builder5.getInt64Ty());
-        // Value *Diff = builder5.CreateSub(IPtr, IBasePtr);
-        // Size = builder5.CreateSub(Size, AccessSize);
-        // Value *Cmp = builder5.CreateICmpUGE(Diff, Size);
-        // builder5.CreateCondBr(Cmp, Error, Return);
-
+        // Value *Idx = builder.CreateLShr(IBasePtr,
+        //     builder.getInt64(LOWFAT_REGION_SIZE_SHIFT));
+        // Value *Sizes = builder.CreateIntToPtr(
+        //     builder.getInt64((uint64_t)_LOWFAT_SIZES),
+        //     builder.getInt64Ty()->getPointerTo());
+        // Value *SizePtr = builder.CreateGEP(Sizes, Idx);
+        // Value *Size = builder.CreateAlignedLoad(SizePtr, sizeof(size_t));
 
         // 添加我们的size获取方式 计算size是必须根据baseptr计算，新ptr不计算
-        BasePtr = builder.CreateBitCast(BasePtr, builder.getInt64Ty());
-        Value *size_base = builder.CreateAnd(BasePtr,0xFC00000000000000);
-        size_base = builder.CreateLShr(size_base,58);
-        Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
-        BasePtr = builder.CreateBitCast(BasePtr, builder.getInt8PtrTy());
+        IRBuilder<> builder5(NullGo);
+        BasePtr = builder5.CreateBitCast(BasePtr, builder5.getInt64Ty());
+        Value *size_base = builder5.CreateAnd(BasePtr,0xFC00000000000000);
+        size_base = builder5.CreateLShr(size_base,58);
+        Value *Size = builder5.CreateShl(builder5.getInt64(1),size_base);
+        BasePtr = builder5.CreateBitCast(BasePtr, builder5.getInt8PtrTy());
         
         // The check is: if (ptr - base > size - sizeof(*ptr)) error();
-        Value *IPtr = builder.CreatePtrToInt(Ptr, builder.getInt64Ty());
-        Value *Diff = builder.CreateSub(IPtr, IBasePtr);
-        Size = builder.CreateSub(Size, AccessSize);
-        Value *Cmp = builder.CreateICmpUGE(Diff, Size);
-        builder.CreateCondBr(Cmp, Error, Return);
+        Value *IPtr = builder5.CreatePtrToInt(Ptr, builder5.getInt64Ty());
+        Value *Diff = builder5.CreateSub(IPtr, IBasePtr);
+        Size = builder5.CreateSub(Size, AccessSize);
+        Value *Cmp = builder5.CreateICmpUGE(Diff, Size);
+        builder5.CreateCondBr(Cmp, Error, Return);
+
+
+        // // 添加我们的size获取方式 计算size是必须根据baseptr计算，新ptr不计算
+        // BasePtr = builder.CreateBitCast(BasePtr, builder.getInt64Ty());
+        // Value *size_base = builder.CreateAnd(BasePtr,0xFC00000000000000);
+        // size_base = builder.CreateLShr(size_base,58);
+        // Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
+        // BasePtr = builder.CreateBitCast(BasePtr, builder.getInt8PtrTy());
+        
+        // // The check is: if (ptr - base > size - sizeof(*ptr)) error();
+        // Value *IPtr = builder.CreatePtrToInt(Ptr, builder.getInt64Ty());
+        // Value *Diff = builder.CreateSub(IPtr, IBasePtr);
+        // Size = builder.CreateSub(Size, AccessSize);
+        // Value *Cmp = builder.CreateICmpUGE(Diff, Size);
+        // builder.CreateCondBr(Cmp, Error, Return);
         // Ptr = builder.CreateSelect(Cmp,BasePtr,Ptr);
         
         

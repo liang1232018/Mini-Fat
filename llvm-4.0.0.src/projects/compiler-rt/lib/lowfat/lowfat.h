@@ -59,13 +59,13 @@ extern "C"
 #define MINIFAT_BASE_SIZE 6
 static inline _LOWFAT_CONST _LOWFAT_INLINE void *minifat_base(const void *_ptr)
 {
-    unsigned long size_base = MINIFAT_MASK & (unsigned long)_ptr;
+    unsigned long long size_base = MINIFAT_MASK & (unsigned long)_ptr;
     size_base = size_base >> (64 - MINIFAT_BASE_SIZE);
     // unsigned long size = 1 << size_base;
     if(size_base == 0) 
-        return NULL;
-    unsigned long mask = 0xFFFFFFFFFFFFFFFF << size_base;
-    return (void *)(mask & (unsigned long)_ptr);
+        return (void *)0xFFFFFFFFFFFFFFFF;
+    unsigned long long mask = 0xFFFFFFFFFFFFFFFF << size_base;
+    return (void *)(mask & (unsigned long long)_ptr);
 }
 
 static inline _LOWFAT_CONST _LOWFAT_INLINE size_t minifat_size(const void *_ptr)
@@ -80,7 +80,7 @@ static inline _LOWFAT_CONST _LOWFAT_INLINE size_t minifat_buffer_size(
     const void *_ptr)
 {
     return minifat_size(_ptr) -
-        ((const uint8_t *)((unsigned long)_ptr & MINIFAT_MATCH) - (const uint8_t *)minifat_base(_ptr));
+        ((const uint8_t *)((unsigned long long)_ptr & MINIFAT_MATCH) - (const uint8_t *)minifat_base(_ptr));
 }
 /*
  * Tests if the given pointer is low-fat or not.

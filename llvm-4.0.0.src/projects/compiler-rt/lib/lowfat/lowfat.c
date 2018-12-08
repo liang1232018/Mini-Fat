@@ -484,8 +484,6 @@ extern LOWFAT_NORETURN void lowfat_oob_error(unsigned info,
     const void *ptr, const void *baseptr)
 {
     const char *kind = lowfat_error_kind(info);
-     if(minifat_size(baseptr) <= 1)
-        return ;
     ssize_t overflow = (ssize_t)((unsigned long)ptr & MINIFAT_MATCH) - (ssize_t)((unsigned long)baseptr & MINIFAT_MATCH);
     if (overflow > 0)
         overflow -= /*lowfat_size*/minifat_size(baseptr);
@@ -504,8 +502,6 @@ extern void lowfat_oob_warning(unsigned info,
     const void *ptr, const void *baseptr)
 {
     const char *kind = lowfat_error_kind(info);
-    if(minifat_size(baseptr) <= 1)
-        return ;
     ssize_t overflow = (ssize_t)((unsigned long)ptr & MINIFAT_MATCH) - (ssize_t)((unsigned long)baseptr & MINIFAT_MATCH);
     if (overflow > 0)
         overflow -= /*lowfat_size*/minifat_size(baseptr);
