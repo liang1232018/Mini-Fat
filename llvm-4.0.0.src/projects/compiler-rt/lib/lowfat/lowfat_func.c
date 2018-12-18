@@ -16,8 +16,8 @@ INLINEATTR void* __minifat_uninstrument_check(const void* ptr, size_t* size) {
     unsigned long long tmp_size = (unsigned long long )ptr & MINIFAT_MASK;
     unsigned long long alloca_size = tmp_size >> (64 - MINIFAT_BASE_SIZE);
     alloca_size = 1 << alloca_size;
-    // if(alloca_size == 0)
-    //     return ptr;
+    if(alloca_size <= 1)
+        return ptr;
 
     unsigned long long match = (unsigned long long )ptr & MINIFAT_MATCH;
     unsigned long long offset = (unsigned long long)ptr & (alloca_size - 1);
@@ -31,14 +31,18 @@ INLINEATTR void* __minifat_uninstrument_check(const void* ptr, size_t* size) {
 
 }
 INLINEATTR PTRTYPE __minifat_extract_ubnd(const void* ptr) {
+    if(ptr == NULL)
+        return NULL;
     unsigned long long size = (unsigned long long )ptr & MINIFAT_MASK;
     size = size >> (64 - MINIFAT_BASE_SIZE);
     unsigned long long alloca_size = 1 << size;
     return ((unsigned long long )ptr & MINIFAT_MATCH & alloca_size) + (alloca_size - 1);
 }
 INLINEATTR void* __minifat_combine_ptr(const void* ptrval, PTRTYPE ubnd) {
+    if(ubnd == NULL || ptrval == NULL)
+        return NULL;
     unsigned long long size = ubnd - (uint64_t)ptrval;
-    int num = 0;
+    unsigned long long num = 0;
     while(size != 0) {
         size = size >> 1;
         num++;

@@ -892,7 +892,7 @@ static void addToPlan(const TargetLibraryInfo *TLI, const DataLayout *DL,
             size = DL->getTypeAllocSize(Ty);
         }
     }
-    if (bounds.isInBounds(size) && kind != LOWFAT_OOB_ERROR_ESCAPE_STORE) {
+    if (bounds.isInBounds(size) && kind != LOWFAT_OOB_ERROR_ESCAPE_STORE && kind != LOWFAT_OOB_ERROR_MEMCPY_ONE && kind != LOWFAT_OOB_ERROR_MEMCPY_TWO) {
         kind = MINIFAT_PTR_INVALID;
     }
         
@@ -1369,6 +1369,8 @@ static void replaceUnsafeLibFuncs(Module *M)
     REPLACE(M, strtof, true);
     REPLACE(M, strtod, true);
     REPLACE(M, strtold, true);
+    REPLACE(M, strtol, true);
+    REPLACE(M, strtoll, true);
     REPLACE(M, strtof_l, true);
     REPLACE(M, strtod_l, true);
     REPLACE(M, strtold_l, true);
@@ -1723,9 +1725,13 @@ static void replaceUnsafeLibFuncs(Module *M)
     REPLACE(M, mblen, true);
     REPLACE(M, wcstombs, true);
     REPLACE(M, mbstowcs, true);
+    REPLACE(M, strtoimax, true);
+    REPLACE(M, strtoumax, true);
 
-    REPLACE_SPECIAL(M, "__isoc99_sscanf", "minifat_sscanf",true)
-
+    REPLACE_SPECIAL(M, "__isoc99_sscanf", "minifat_sscanf",true);
+    REPLACE_SPECIAL(M, "__isoc99_fscanf", "minifat_fscanf",true);
+    REPLACE_SPECIAL(M, "__isoc99_scanf", "minifat_scanf",true);
+    REPLACE_SPECIAL(M, "__strdup", "minifat_strdup",true);
 }
 
 /*
@@ -2525,31 +2531,40 @@ static void maskInst(Instruction *I)
         Value *Arg1 = Cmp->getOperand(0);
         Value *Arg2 = Cmp->getOperand(1);
 
-        if (!Arg1->getType()->isPointerTy())
-            return;
-        
-        IRBuilder<> builder(Cmp);
-        Value* TArg1 = builder.CreateBitCast(Arg1, builder.getInt64Ty());
-        TArg1 = builder.CreateAnd(TArg1,0x03FFFFFFFFFFFFFF);
-        TArg1 = builder.CreateBitCast(TArg1, Arg1->getType());
         auto OI = Cmp->op_begin();
-        *OI = TArg1;
+        IRBuilder<> builder(Cmp);
+        if (Arg1!= NULL && Arg1->getType()->isPointerTy())
+        {    
+            Value* TArg1 = builder.CreateBitCast(Arg1, builder.getInt64Ty());
+            TArg1 = builder.CreateAnd(TArg1,0x03FFFFFFFFFFFFFF);
+            TArg1 = builder.CreateBitCast(TArg1, Arg1->getType());
+            
+            *OI = TArg1;
+        }  
+
+        if (Arg2!= NULL && Arg2->getType()->isPointerTy())
+        {
+            Value* TArg2 = builder.CreateBitCast(Arg2, builder.getInt64Ty());
+            TArg2 = builder.CreateAnd(TArg2,0x03FFFFFFFFFFFFFF);
+            TArg2 = builder.CreateBitCast(TArg2, Arg2->getType());
+            OI++;
+            *OI = TArg2;
+        }
         
-        Value* TArg2 = builder.CreateBitCast(Arg2, builder.getInt64Ty());
-        TArg2 = builder.CreateAnd(TArg2,0x03FFFFFFFFFFFFFF);
-        TArg2 = builder.CreateBitCast(TArg2, Arg2->getType());
-        OI++;
-        *OI = TArg2;
         
     }
     else if(CallInst *Call = dyn_cast<CallInst >(I)) {
         Function *F = Call->getCalledFunction();
-        if (F != nullptr && F->getName() == "minifat_sscanf") {
+        if (F != nullptr && (F->getName() == "minifat_sscanf" || F->getName() == "minifat_fscanf" || F->getName() == "minifat_fprintf" || F->getName() == "minifat_sprintf") ) {
+
             IRBuilder<> builder(Call);
             auto OI = Call->op_begin();
             for (unsigned i = 2; i < Call->getNumArgOperands(); i++)
             {
                 Value *Arg = Call->getArgOperand(i);
+                if(Arg->getType()->getTypeID () != 15) {
+                    continue;
+                }
                 Value* TArg = builder.CreateBitCast(Arg, builder.getInt64Ty());
                 TArg = builder.CreateAnd(TArg,0x03FFFFFFFFFFFFFF);
                 TArg = builder.CreateBitCast(TArg, Arg->getType());
@@ -2557,10 +2572,73 @@ static void maskInst(Instruction *I)
                 *(OI+i) = TArg;
                 
             }
+        } else if (F != nullptr && (F->getName() == "minifat_printf" || F->getName() == "minifat_scanf") ) {
+            IRBuilder<> builder(Call);
+            auto OI = Call->op_begin();
+            for (unsigned i = 1; i < Call->getNumArgOperands(); i++)
+            {
+                Value *Arg = Call->getArgOperand(i);
+                if(Arg->getType()->getTypeID () != 15) {
+                    continue;
+                }
+                Value* TArg = builder.CreateBitCast(Arg, builder.getInt64Ty());
+                TArg = builder.CreateAnd(TArg,0x03FFFFFFFFFFFFFF);
+                TArg = builder.CreateBitCast(TArg, Arg->getType());
+
+                *(OI+i) = TArg;
+                
+            }
+        } else if (F != nullptr && (F->getName() == "_E__pr_warn" || F->getName() == "_E__pr_info" || F->getName() == "_E__die_error" || F->getName() == "_E__fatal_sys_error"
+                    || F->getName() == "_E__sys_error" || F->getName() == "_E__abort_error") ) {
+            IRBuilder<> builder(Call);
+            auto OI = Call->op_begin();
+            for (unsigned i = 1; i < Call->getNumArgOperands(); i++)
+            {
+                Value *Arg = Call->getArgOperand(i);
+                if(Arg->getType()->getTypeID () != 15) {
+                    continue;
+                }
+                Value* TArg = builder.CreateBitCast(Arg, builder.getInt64Ty());
+                TArg = builder.CreateAnd(TArg,0x03FFFFFFFFFFFFFF);
+                TArg = builder.CreateBitCast(TArg, Arg->getType());
+
+                *(OI+i) = TArg;
+                
+            }
+        } else if (F != nullptr && (F->getName() == "llvm.va_start" || F->getName() == "llvm.va_end") ) {
+            IRBuilder<> builder(Call);
+            auto OI = Call->op_begin();
+            for (unsigned i = 0; i < Call->getNumArgOperands(); i++)
+            {
+                Value *Arg = Call->getArgOperand(i);
+                if(Arg->getType()->getTypeID () != 15) {
+                    continue;
+                }
+                Value* TArg = builder.CreateBitCast(Arg, builder.getInt64Ty());
+                TArg = builder.CreateAnd(TArg,0x03FFFFFFFFFFFFFF);
+                TArg = builder.CreateBitCast(TArg, Arg->getType());
+
+                *(OI+i) = TArg;
+                
+            }
+        } else {
+            IRBuilder<> builder(Call);
+            auto OI = Call->op_begin();
+            if(F == nullptr)
+                return;
+            for(auto FI = F->arg_begin(),FE = F->arg_end();FI != FE; FI++, OI++) {
+                // 针对特殊的byval属性，即函数传参是地址，但是实际暗包含一步load数据
+                if( (*OI)->getType()->isPointerTy() && FI->hasByValAttr()) {
+                    Value *Arg = *OI;
+                    Value* TArg = builder.CreateBitCast(Arg, builder.getInt64Ty());
+                    TArg = builder.CreateAnd(TArg,0x03FFFFFFFFFFFFFF);
+                    TArg = builder.CreateBitCast(TArg, Arg->getType());
+
+                    *(OI) = TArg;                
+                }
+            }
         }
-
     }
-
 }
 
 

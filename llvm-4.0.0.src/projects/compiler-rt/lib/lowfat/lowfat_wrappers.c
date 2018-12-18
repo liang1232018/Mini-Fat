@@ -128,26 +128,30 @@ int minifat_madvise(void *addr, size_t len, int advice);
 int minifat_mincore(void *addr, size_t len, unsigned char *vec);
 int minifat_munmap(void *start, size_t len);
 
-static inline uintptr_t minifat_specifyupbound(uintptr_t ptrint, size_t size) {
-    // calculate upper bound
-    uintptr_t upbnd = ptrint + size;
-    assert(upbnd <= MAXPTRVAL);
-    // save lower bound right after allocated object
-    PTRTYPE* lobndaddr = (PTRTYPE*) upbnd;
-    *lobndaddr = ptrint;
-    return upbnd;
-}
+// static inline uintptr_t minifat_specifyupbound(uintptr_t ptrint, size_t size) {
+//     // calculate upper bound
+//     uintptr_t upbnd = ptrint + size;
+//     assert(upbnd <= MAXPTRVAL);
+//     // save lower bound right after allocated object
+//     PTRTYPE* lobndaddr = (PTRTYPE*) upbnd;
+//     *lobndaddr = ptrint;
+//     return upbnd;
+// }
 
-static inline void* minifat_makefatptr(uintptr_t ptrint, uintptr_t upbnd) {
-    // add upper bound in upper bits of ptr
-    ptrint |= upbnd << PTRSIZEBITS;
-    return (void*) ptrint;
-}
+// static inline void* minifat_makefatptr(uintptr_t ptrint, uintptr_t upbnd) {
+//     // add upper bound in upper bits of ptr
+//     ptrint |= upbnd << PTRSIZEBITS;
+//     return (void*) ptrint;
+// }
 
 static inline void* minifat_specifybounds(void* ptr, size_t size) {
-    uintptr_t ptrint = (uintptr_t) ptr;
-    uintptr_t upbnd = minifat_specifyupbound(ptrint, size);
-    return minifat_makefatptr(ptrint, upbnd);
+    unsigned long long num = 0;
+    while(size != 0) {
+        size = size >> 1;
+        num++;
+    }
+    num = num  << 58;
+    return ptr + num;
 }
 
 // void* minifat_malloc(size_t size) {
@@ -2330,10 +2334,10 @@ int minifat_utimensat(int fd, const char *path, const struct timespec times[2], 
 // NOTE: we do not instrument function ptrs, thus we do not uninstrument
 //       arguments such as void (*func)(void *)
 
-int __cxa_atexit(void (*func)(void *), void *arg, void *dso);
+int minifat___cxa_atexit(void (*func)(void *), void *arg, void *dso);
 void minifat___assert_fail(const char *expr, const char *file, int line, const char *func);
 
-int __cxa_atexit(void (*func)(void *), void *arg, void *dso) {
+int minifat___cxa_atexit(void (*func)(void *), void *arg, void *dso) {
 #if 0
     // TODO: args and dso can contain ptrs within, must uninstrument them?
     arg = __minifat_uninstrument(arg);

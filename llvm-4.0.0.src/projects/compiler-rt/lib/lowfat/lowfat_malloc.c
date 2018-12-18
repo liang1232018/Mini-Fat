@@ -557,34 +557,32 @@ void *ptr = minifat_malloc(nmemb * size);
 /*
  * LOWFAT C++ new
  */
-// extern void *lowfat__Znwm(size_t size) LOWFAT_ALIAS("lowfat_malloc");
+extern void *minifat__Znwm(size_t size) LOWFAT_ALIAS("minifat_malloc");
 
 /*
  * LOWFAT C++ new[]
  */
-// extern void *lowfat__Znam(size_t size) LOWFAT_ALIAS("lowfat_malloc");
+extern void *minifat__Znam(size_t size) LOWFAT_ALIAS("minifat_malloc");
 
 /*
  * LOWFAT C++ new nothrow
  */
-// extern void *lowfat__ZnwmRKSt9nothrow_t(size_t size)
-    // LOWFAT_ALIAS("lowfat_malloc");
+extern void *minifat__ZnwmRKSt9nothrow_t(size_t size) LOWFAT_ALIAS("minifat_malloc");
 
 /*
  * LOWFAT C++ new[] nothrow
  */
-// extern void *lowfat__ZnamRKSt9nothrow_t(size_t size)
-//     LOWFAT_ALIAS("lowfat_malloc");
+extern void *minifat__ZnamRKSt9nothrow_t(size_t size) LOWFAT_ALIAS("minifat_malloc");
 
 /*
  * LOWFAT C++ delete
  */
-// extern void lowfat__ZdlPv(void *ptr) LOWFAT_ALIAS("lowfat_free");
+extern void minifat__ZdlPv(void *ptr) LOWFAT_ALIAS("minifat_free");
 
 /*
  * LOWFAT C++ delete[]
  */
-// extern void lowfat__ZdaPv(void *ptr) LOWFAT_ALIAS("lowfat_free");
+extern void minifat__ZdaPv(void *ptr) LOWFAT_ALIAS("minifat_free");
 
 /*
  * LOWFAT strdup()
