@@ -1083,50 +1083,50 @@ static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
             {builder.getInt32(info), TPtr, Size, BasePtr});
     }    
     // 对任意的指针加 屏蔽size的操作，假设指针是存在较后的这个操作数里的
-    if(dyn_cast<StoreInst>(I) || dyn_cast<LoadInst>(I)) {
-            if(info != LOWFAT_OOB_ERROR_ESCAPE_STORE) {
+    // if(dyn_cast<StoreInst>(I) || dyn_cast<LoadInst>(I)) {
+    //         if(info != LOWFAT_OOB_ERROR_ESCAPE_STORE) {
 
-                TPtr = builder.CreateBitCast(TPtr, builder.getInt64Ty());
-                TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
-                TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
-                // auto OI = I->op_begin();
-                // OI++;
-                // // if(OI != I->op_end() && (*OI)->getType()->getTypeID () == 15)
-                //     *OI = TPtr;
+    //             TPtr = builder.CreateBitCast(TPtr, builder.getInt64Ty());
+    //             TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
+    //             TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
+    //             // auto OI = I->op_begin();
+    //             // OI++;
+    //             // // if(OI != I->op_end() && (*OI)->getType()->getTypeID () == 15)
+    //             //     *OI = TPtr;
                 
-                for (auto OI = I->op_end()-1, OE = I->op_begin(); OI >= OE; --OI) {
-                    if((*OI)->getType()->getTypeID () == 15) {
-                        *OI = TPtr;
-                        break;
-                    }
-                }
-            }
+    //             for (auto OI = I->op_end()-1, OE = I->op_begin(); OI >= OE; --OI) {
+    //                 if((*OI)->getType()->getTypeID () == 15) {
+    //                     *OI = TPtr;
+    //                     break;
+    //                 }
+    //             }
+    //         }
             
-    } else if (MemSetInst *MI = dyn_cast<MemSetInst>(I)) {
-        TPtr = builder.CreateBitCast(TPtr, builder.getInt64Ty());
-        TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
-        Value *mem_size = MI->getOperand(2);
-        TPtr = builder.CreateSub(TPtr,mem_size);
-        TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
+    // } else if (MemSetInst *MI = dyn_cast<MemSetInst>(I)) {
+    //     TPtr = builder.CreateBitCast(TPtr, builder.getInt64Ty());
+    //     TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
+    //     Value *mem_size = MI->getOperand(2);
+    //     TPtr = builder.CreateSub(TPtr,mem_size);
+    //     TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
 
-        auto OI = MI->op_begin();
-        *OI = TPtr;
-    } else if (MemTransferInst *MI = dyn_cast<MemTransferInst>(I)) {
-        TPtr = builder.CreateBitCast(TPtr, builder.getInt64Ty());
-        TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
-        Value *mem_size = MI->getOperand(2);
-        TPtr = builder.CreateSub(TPtr,mem_size);
-        TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
+    //     auto OI = MI->op_begin();
+    //     *OI = TPtr;
+    // } else if (MemTransferInst *MI = dyn_cast<MemTransferInst>(I)) {
+    //     TPtr = builder.CreateBitCast(TPtr, builder.getInt64Ty());
+    //     TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
+    //     Value *mem_size = MI->getOperand(2);
+    //     TPtr = builder.CreateSub(TPtr,mem_size);
+    //     TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
 
-        if(info == LOWFAT_OOB_ERROR_MEMCPY_ONE) {
-            auto OI = MI->op_begin();
-            *OI = TPtr;
-        } else if(info == LOWFAT_OOB_ERROR_MEMCPY_TWO) {
-            auto OI = MI->op_begin();
-            OI++;
-            *OI = TPtr;
-        }
-    } 
+    //     if(info == LOWFAT_OOB_ERROR_MEMCPY_ONE) {
+    //         auto OI = MI->op_begin();
+    //         *OI = TPtr;
+    //     } else if(info == LOWFAT_OOB_ERROR_MEMCPY_TWO) {
+    //         auto OI = MI->op_begin();
+    //         OI++;
+    //         *OI = TPtr;
+    //     }
+    // } 
     // else if (InsertElementInst *Insert = dyn_cast<InsertElementInst>(I)) {
     //     TPtr = builder.CreateBitCast(TPtr, builder.getInt64Ty());
     //     TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
@@ -2526,8 +2526,61 @@ static void maskInst(Instruction *I)
 {
     if (I->getMetadata("nosanitize") != nullptr)
         return;
-    if (CmpInst  *Cmp = dyn_cast<CmpInst >(I))
-    {
+    // 对任意的指针加 屏蔽size的操作，假设指针是存在较后的这个操作数里的
+    if(LoadInst *Load = dyn_cast<LoadInst>(I)) {
+        IRBuilder<> builder(Load);
+        Value *Ptr =  Load->getOperand(0);
+        Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
+        TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
+        TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
+        auto OI = Load->op_begin();
+        if(OI != Load->op_end() && (*OI)->getType()->getTypeID () == 15)
+            *OI = TPtr;
+
+    } else if(StoreInst *Store = dyn_cast<StoreInst>(I) ) {
+        IRBuilder<> builder(Store);
+        Value *Ptr =  Store->getOperand(1);
+        Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
+        TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
+        TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
+        auto OI = Store->op_begin();
+        OI++;
+        if(OI != Store->op_end() && (*OI)->getType()->getTypeID () == 15)
+            *OI = TPtr;
+        
+        // for (auto OI = I->op_end()-1, OE = I->op_begin(); OI >= OE; --OI) {
+        //     if((*OI)->getType()->getTypeID () == 15) {
+        //         *OI = TPtr;
+        //         break;
+        //     }
+        // }
+            
+    } else if (MemSetInst *MI = dyn_cast<MemSetInst>(I)) {
+        IRBuilder<> builder(MI);
+        Value *Ptr =  MI->getOperand(0);
+        Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
+        TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
+        TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
+
+        auto OI = MI->op_begin();
+        *OI = TPtr;
+    } else if (MemTransferInst *MI = dyn_cast<MemTransferInst>(I)) {
+        IRBuilder<> builder(MI);
+        Value *Ptr =  MI->getOperand(0);
+        Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
+        TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
+        TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
+        
+        auto OI = MI->op_begin();
+        *OI = TPtr;
+
+        Ptr =  MI->getOperand(1);
+        TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
+        TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
+        TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
+        OI++;
+        *OI = TPtr;
+    } else if (CmpInst  *Cmp = dyn_cast<CmpInst >(I)) {
         Value *Arg1 = Cmp->getOperand(0);
         Value *Arg2 = Cmp->getOperand(1);
 

@@ -35,12 +35,16 @@ INLINEATTR PTRTYPE __minifat_extract_ubnd(const void* ptr) {
         return NULL;
     unsigned long long size = (unsigned long long )ptr & MINIFAT_MASK;
     size = size >> (64 - MINIFAT_BASE_SIZE);
-    unsigned long long alloca_size = 1 << size;
+    unsigned long long alloca_size = 1ull << size;
+    if(alloca_size <= 1)
+        return NULL;
     return ((unsigned long long )ptr & MINIFAT_MATCH & alloca_size) + (alloca_size - 1);
 }
 INLINEATTR void* __minifat_combine_ptr(const void* ptrval, PTRTYPE ubnd) {
-    if(ubnd == NULL || ptrval == NULL)
+    if(ubnd == NULL && ptrval == NULL)
         return NULL;
+    if(ubnd == NULL && ptrval != NULL)
+        return ptrval;
     unsigned long long size = ubnd - (uint64_t)ptrval;
     unsigned long long num = 0;
     while(size != 0) {
