@@ -515,6 +515,12 @@ extern void lowfat_oob_warning(unsigned info,
         kind, ptr, lowfat_kind(ptr), baseptr, /*lowfat_size*/minifat_size(baseptr),
         (overflow < 0? "underflow": "overflow "), overflow);
 }
+extern void lowfat_oob_test(unsigned info,
+    const void *ptr, const void *baseptr)
+{
+    return;
+}
+
 
 extern void lowfat_oob_check(unsigned info, const void *ptr, size_t size0,
     const void *baseptr)
