@@ -625,5 +625,12 @@ extern LOWFAT_CONST void* minifat_pointer_package(void *ptr, ssize_t size)
     base_size = base_size << ((64 - MINIFAT_BASE_SIZE));
     return (void *)((unsigned long)ptr | base_size);
 }
+
+extern LOWFAT_CONST void* minifat_gv_package(void *ptr, ssize_t size)
+{
+    unsigned long long base_size = size << ((64 - MINIFAT_BASE_SIZE));
+    return (void *)((unsigned long)ptr | base_size);
+}
+
 #endif
 
