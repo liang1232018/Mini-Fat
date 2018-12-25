@@ -1790,7 +1790,35 @@ static void addLowFatFuncs(Module *M)
         builder.CreateCondBr(Eql, Error, Right);
 
         IRBuilder<> builder2(Error);
-        builder2.CreateRet(Ptr);
+        if (Constant *C = dyn_cast<Constant>(Ptr)) {
+            Constant *stripped = C->stripPointerCasts();
+            if (GlobalVariable *GV = dyn_cast<GlobalVariable>(stripped)) {
+
+                Module *M = builder2.GetInsertBlock()->getParent()->getParent();
+                Value *package = M->getOrInsertFunction("minifat_gv_package",
+                    builder2.getInt8PtrTy(), builder2.getInt8PtrTy(), builder2.getInt64Ty(),
+                    nullptr);
+
+                const DataLayout *DL = &M->getDataLayout();
+                Type *Ty = GV->getType();
+                PointerType *PtrTy = dyn_cast<PointerType>(Ty);
+                assert(PtrTy != nullptr);
+                Ty = PtrTy->getElementType();
+                size_t size = DL->getTypeAllocSize(Ty);
+                size_t size_base = 64 - clzll(size);
+                Value *Size = builder2.getInt64(size_base);
+
+                Value *NGV = builder2.CreateCall(package,{GV, Size});
+                NGV = builder2.CreateBitCast(NGV, builder2.getInt64Ty());
+                NGV = builder2.CreateAnd(NGV,Size);
+                NGV = builder2.CreateBitCast(NGV, builder2.getInt8PtrTy());
+                builder2.CreateRet(NGV);
+            } else {
+                builder2.CreateRet(Ptr);
+            }
+        } else {
+            builder2.CreateRet(Ptr);
+        }
         
 
         IRBuilder<> builder3(Right);
@@ -1919,6 +1947,8 @@ static void addLowFatFuncs(Module *M)
         Value *IPtr = builder5.CreatePtrToInt(Ptr, builder5.getInt64Ty());
         Value *IBound = builder5.CreateAdd(IBasePtr,Size);
         IBound = builder5.CreateSub(IBound,builder5.getInt64(1));
+        IBasePtr = builder5.CreateAnd(IBasePtr,0x03FFFFFFFFFFFFFF);
+        IPtr = builder5.CreateAnd(IPtr,0x03FFFFFFFFFFFFFF);
         Value *Diff = builder5.CreateSub(IPtr, IBasePtr);
         Size = builder5.CreateSub(Size, AccessSize);
         Value *Cmp = builder5.CreateICmpUGE(Diff, Size);
@@ -2516,10 +2546,62 @@ static bool isBlacklisted(SpecialCaseList *SCL, Function *F)
     return SCL->inSection("fun", F->getName());
 }
 
-
 /*
 * Minifat_Pass
-* this function is for some usecases need to mask the ptr
+* this function is for make gv to minifat-gv
+*/
+static void gvMakeInst(Instruction *I)
+{
+    if (I->getMetadata("nosanitize") != nullptr)
+        return;
+    // 对任意的GV  变量，弄成minifat-ptr
+
+    if(!(dyn_cast<LoadInst>(I) || dyn_cast<StoreInst>(I) || dyn_cast<MemSetInst>(I) || dyn_cast<MemTransferInst>(I) || dyn_cast<CallInst>(I)))
+        return ;
+    IRBuilder<> builder(I);
+    Module *M = builder.GetInsertBlock()->getParent()->getParent();
+
+    auto OE = I->op_end(), OI = I->op_begin();
+    if(dyn_cast<StoreInst>(I)) 
+        OI++;
+    for (; OI != OE; ++OI) {
+        if((*OI)->getType()->getTypeID () == 15) {
+            Value *Op = *OI;
+            if (Constant *C = dyn_cast<Constant>(Op)) {
+                Constant *stripped = C->stripPointerCasts();
+                if (GlobalVariable *GV = dyn_cast<GlobalVariable>(stripped)) {
+
+
+                    const DataLayout *DL = &M->getDataLayout();
+                    Type *Ty = GV->getType();
+                    PointerType *PtrTy = dyn_cast<PointerType>(Ty);
+                    if(PtrTy) {
+                        Value *package = M->getOrInsertFunction("minifat_gv_package",
+                        builder.getInt8PtrTy(), builder.getInt8PtrTy(), builder.getInt64Ty(),
+                        nullptr);
+
+                        Ty = PtrTy->getElementType();
+                        size_t size = DL->getTypeAllocSize(Ty);
+                        size_t size_base = 64 - clzll(size);
+                        Value *Size = builder.getInt64(size_base);
+
+                        // Value *Size = builder.CreateShl(Size,58);
+                        // Value DGV = builder.CreateBitCast(GV, builder.getInt64Ty());
+
+                        Value *NGV = builder.CreateCall(package,{GV, Size});
+                        NGV = builder.CreateBitCast(NGV,GV->getType());
+                        *OI = NGV;
+                    }
+
+                }
+            }
+
+        }
+    }
+}
+/*
+* Minifat_Pass
+* this function is for mask the minifat-ptr
 */
 static void maskInst(Instruction *I)
 {
@@ -2776,9 +2858,20 @@ struct LowFat : public ModulePass
         }
 
         // Pass (1b) Global Variable lowfatification
-        // if (!option_no_replace_globals)
-        //     for (auto &GV: M.getGlobalList())
-        //         makeGlobalVariableLowFatPtr(&M, &GV);
+        if (!option_no_replace_globals)
+            for (auto &GV: M.getGlobalList())
+                makeGlobalVariableLowFatPtr(&M, &GV);
+        for (auto &F: M)
+        {
+            if (F.isDeclaration())
+                continue;
+            if (isBlacklisted(Blacklist.get(), &F))
+                continue;
+
+            for (auto &BB: F)
+                for (auto &I: BB)
+                    gvMakeInst(&I);
+        }
 
         // PASS (2): Replace unsafe library calls
         replaceUnsafeLibFuncs(&M);
@@ -2799,6 +2892,7 @@ struct LowFat : public ModulePass
                 I->eraseFromParent();
         }
 
+        //Pass (5): Mask所有的指针
         for (auto &F: M)
         {
             if (F.isDeclaration())
