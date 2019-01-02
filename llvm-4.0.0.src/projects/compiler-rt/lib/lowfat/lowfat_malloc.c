@@ -246,6 +246,7 @@ extern void *minifat_malloc(size_t size) {
         return lowfat_fallback_malloc(size);
     }
     else {
+        coded_size = ~coded_size & 0x3F;
         ptr = (void*)((uint64_t)ptr | (coded_size << 58));
         return ptr;
     }
@@ -467,7 +468,7 @@ extern void *minifat_realloc(void *ptr, uint64_t size) {
         cpy_size = 1 << ((64 - clz(size)) & 0x3F);
     }
 
-    uint64_t ptr_size = 1 << (((uint64_t)ptr >> 58) & 0x3F);
+    uint64_t ptr_size = 1 << ((~(uint64_t)ptr >> 58) & 0x3F);
     cpy_size = (cpy_size < ptr_size ? cpy_size : ptr_size);
     // there may be a fatal problem with memcpy
     minifat_memcpy(newptr, ptr, cpy_size);

@@ -150,6 +150,7 @@ static inline void* minifat_specifybounds(void* ptr, size_t size) {
         size = size >> 1;
         num++;
     }
+    num = ~num & 0x3F;
     num = num  << 58;
     return ptr + num;
 }
