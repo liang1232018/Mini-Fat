@@ -456,9 +456,7 @@ extern void *minifat_memcpy(void *__restrict__ dest, const void *__restrict__ sr
 extern void *minifat_realloc(void *ptr, uint64_t size) {
     if (ptr == NULL || size == 0)
         return minifat_malloc(size);
-    void *newptr = minifat_malloc(size);
-    if (newptr == NULL)
-        return NULL;
+    
 
     uint64_t cpy_size;
     if (size < 8) {
@@ -469,13 +467,24 @@ extern void *minifat_realloc(void *ptr, uint64_t size) {
     }
 
     uint64_t ptr_size = 1 << ((~(uint64_t)ptr >> 58) & 0x3F);
-    cpy_size = (cpy_size < ptr_size ? cpy_size : ptr_size);
-    // there may be a fatal problem with memcpy
-    minifat_memcpy(newptr, ptr, cpy_size);
-    minifat_free(ptr);
-    ptr = NULL;
+    if(~(uint64_t)ptr >> 58 != 0x3F ) {
+        cpy_size = (cpy_size < ptr_size ? cpy_size : ptr_size);
 
-    return newptr;
+        void *newptr = minifat_malloc(size);
+        if (newptr == NULL)
+            return NULL;
+
+        minifat_memcpy(newptr, ptr, cpy_size);
+        minifat_free(ptr);
+        ptr = NULL;
+
+        return newptr;
+    } else {
+        void *newptr = realloc(ptr,cpy_size);
+        return newptr;
+    }
+    // there may be a fatal problem with memcpy
+    
 }
 
 
