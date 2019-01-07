@@ -16,11 +16,13 @@ INLINEATTR void* __minifat_uninstrument_check(const void* ptr, size_t* size) {
     unsigned long long tmp_size = (unsigned long long )ptr & MINIFAT_MASK;
     unsigned long long alloca_size = tmp_size >> (64 - MINIFAT_BASE_SIZE);
     alloca_size = ~alloca_size & 0x3F;
-    alloca_size = 1 << alloca_size;
-    if(alloca_size <= 1)
-        return ptr;
+    alloca_size = 1ull << alloca_size;
 
     unsigned long long match = (unsigned long long )ptr & MINIFAT_MATCH;
+    if(alloca_size <= 1)
+        return match;
+
+    
     unsigned long long offset = (unsigned long long)ptr & (alloca_size - 1);
 
     if(offset + *size <= alloca_size) {

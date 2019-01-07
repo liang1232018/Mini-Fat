@@ -1086,6 +1086,7 @@ static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
             {builder.getInt32(info), TPtr, Size, BasePtr});
         // builder.CreateCall(BoundsCheck,
         //     {builder.getInt32(info), TPtr, Size, BasePtr});
+        /*
         if(dyn_cast<StoreInst>(I) || dyn_cast<LoadInst>(I)) {
             if(info != LOWFAT_OOB_ERROR_ESCAPE_STORE) {
                 for (auto OI = I->op_end()-1, OE = I->op_begin(); OI >= OE; --OI) {
@@ -1096,6 +1097,20 @@ static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
                 }
             }
                 
+        }*/
+        if(LoadInst *Load = dyn_cast<LoadInst>(I)) {
+            auto OI = Load->op_begin();
+            if(OI != Load->op_end() && (*OI)->getType()->getTypeID () == 15)
+                *OI = TPtr;
+
+        } else if(StoreInst *Store = dyn_cast<StoreInst>(I) ) {
+            if(info != LOWFAT_OOB_ERROR_ESCAPE_STORE) {
+                auto OI = Store->op_begin();
+                OI++;
+                if(OI != Store->op_end() && (*OI)->getType()->getTypeID () == 15)
+                    *OI = TPtr;     
+            }
+                    
         } else if (MemSetInst *MI = dyn_cast<MemSetInst>(I)) {
             TPtr = builder.CreateBitCast(TPtr, builder.getInt64Ty());
             Value *mem_size = MI->getOperand(2);
@@ -1105,11 +1120,6 @@ static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
             auto OI = MI->op_begin();
             *OI = TPtr;
         } else if (MemTransferInst *MI = dyn_cast<MemTransferInst>(I)) {
-            TPtr = builder.CreateBitCast(TPtr, builder.getInt64Ty());
-            Value *mem_size = MI->getOperand(2);
-            TPtr = builder.CreateSub(TPtr,mem_size);
-            TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
-
             if(info == LOWFAT_OOB_ERROR_MEMCPY_ONE) {
                 auto OI = MI->op_begin();
                 *OI = TPtr;
@@ -1809,14 +1819,23 @@ static void addLowFatFuncs(Module *M)
                 Ty = PtrTy->getElementType();
                 size_t size = DL->getTypeAllocSize(Ty);
                 size_t size_base = 64 - clzll(size);
-                Value *Size = builder2.getInt64(size_base);
 
-                Value *NGV = builder2.CreateCall(package,{GV, Size});
-                NGV = builder2.CreateBitCast(NGV, builder2.getInt64Ty());
-                Value *mask = builder2.CreateShl(builder2.getInt64(0xFFFFFFFFFFFFFFFF),Size);
-                NGV = builder2.CreateAnd(NGV,mask);
-                NGV = builder2.CreateBitCast(NGV, builder2.getInt8PtrTy());
-                builder2.CreateRet(NGV);
+                if(size_base == 0) {
+                    Value *TPtr = builder2.CreateBitCast(Ptr,builder2.getInt64Ty());
+                    TPtr = builder2.CreateOr(TPtr,builder2.getInt64(0xFC00000000000000));
+                    TPtr = builder2.CreateBitCast(TPtr,Ptr->getType());
+                    builder2.CreateRet(TPtr);
+                } else {
+                    Value *Size = builder2.getInt64(size_base);
+
+                    Value *NGV = builder2.CreateCall(package,{GV, Size});
+                    NGV = builder2.CreateBitCast(NGV, builder2.getInt64Ty());
+                    Value *mask = builder2.CreateShl(builder2.getInt64(0xFFFFFFFFFFFFFFFF),Size);
+                    NGV = builder2.CreateAnd(NGV,mask);
+                    NGV = builder2.CreateBitCast(NGV, builder2.getInt8PtrTy());
+                    builder2.CreateRet(NGV);
+                }
+                
             } else {
                 Value *TPtr = builder2.CreateBitCast(Ptr,builder2.getInt64Ty());
                 TPtr = builder2.CreateOr(TPtr,builder2.getInt64(0xFC00000000000000));
@@ -2018,9 +2037,13 @@ static void addLowFatFuncs(Module *M)
         Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
         Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
         Bound = builder.CreateAdd(Bound,Size);
+        Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
 
         IBasePtr = builder.CreateAnd(IBasePtr,0x03FFFFFFFFFFFFFF);
         IPtr = builder.CreateAnd(IPtr,0x03FFFFFFFFFFFFFF);
+
+        // Value *RIBasePtr = builder.CreateBitCast(IBasePtr,builder.getInt8PtrTy());
+        // Value *RIPtr = builder.CreateBitCast(IPtr,builder.getInt8PtrTy());
 
         Value *Cmp2 = builder.CreateICmpUGE(IPtr,IBasePtr);
         Value *TRPtr = builder.CreateSelect(Cmp2,Ptr,BasePtr);
@@ -2683,6 +2706,10 @@ static void gvMakeInst(Instruction *I)
                         size_t size = DL->getTypeAllocSize(Ty);
                         size_t size_base = 64 - clzll(size);
                         Value *Size = builder.getInt64(size_base);
+                        if(size_base == 0)
+                        {
+                            continue;
+                        }
 
                         // Value *Size = builder.CreateShl(Size,58);
                         // Value DGV = builder.CreateBitCast(GV, builder.getInt64Ty());
@@ -2716,7 +2743,7 @@ static void maskInst(Instruction *I)
         auto OI = Load->op_begin();
         if(OI != Load->op_end() && (*OI)->getType()->getTypeID () == 15)
             *OI = TPtr;
-
+        Load->setVolatile(true);
     } else if(StoreInst *Store = dyn_cast<StoreInst>(I) ) {
         IRBuilder<> builder(Store);
         Value *Ptr =  Store->getOperand(1);
@@ -2728,14 +2755,16 @@ static void maskInst(Instruction *I)
         if(OI != Store->op_end() && (*OI)->getType()->getTypeID () == 15)
             *OI = TPtr;
         
-        // for (auto OI = I->op_end()-1, OE = I->op_begin(); OI >= OE; --OI) {
-        //     if((*OI)->getType()->getTypeID () == 15) {
-        //         *OI = TPtr;
-        //         break;
-        //     }
-        // }
+        Store->setVolatile(true);
+        // // for (auto OI = I->op_end()-1, OE = I->op_begin(); OI >= OE; --OI) {
+        // //     if((*OI)->getType()->getTypeID () == 15) {
+        // //         *OI = TPtr;
+        // //         break;
+        // //     }
+        // // }
             
     } else if (MemSetInst *MI = dyn_cast<MemSetInst>(I)) {
+        // printf("no!!\n");
         IRBuilder<> builder(MI);
         Value *Ptr =  MI->getOperand(0);
         Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
@@ -2745,10 +2774,13 @@ static void maskInst(Instruction *I)
         auto OI = MI->op_begin();
         *OI = TPtr;
     } else if (MemTransferInst *MI = dyn_cast<MemTransferInst>(I)) {
+        // printf("yes!!\n");
         IRBuilder<> builder(MI);
+        Value *mem_size = MI->getOperand(2);
         Value *Ptr =  MI->getOperand(0);
         Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
         TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
+        TPtr = builder.CreateSub(TPtr, mem_size);
         TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
         
         auto OI = MI->op_begin();
@@ -2757,6 +2789,7 @@ static void maskInst(Instruction *I)
         Ptr =  MI->getOperand(1);
         TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
         TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
+        TPtr = builder.CreateSub(TPtr, mem_size);
         TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
         OI++;
         *OI = TPtr;
