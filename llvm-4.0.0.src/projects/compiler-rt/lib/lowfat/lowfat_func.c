@@ -8,10 +8,10 @@
 
 #define PTRTYPE uint64_t
 
-INLINEATTR void* __minifat_uninstrument(const void* ptr){
+ void* __minifat_uninstrument(const void* ptr){
     return  (void *)((unsigned long long )ptr & MINIFAT_MATCH);
 }
-INLINEATTR void* __minifat_uninstrument_check(const void* ptr, size_t* size) {
+void* __minifat_uninstrument_check(const void* ptr, size_t* size) {
 
     unsigned long long tmp_size = (unsigned long long )ptr & MINIFAT_MASK;
     unsigned long long alloca_size = tmp_size >> (64 - MINIFAT_BASE_SIZE);
@@ -30,7 +30,14 @@ INLINEATTR void* __minifat_uninstrument_check(const void* ptr, size_t* size) {
     return NULL;
 
 }
-INLINEATTR PTRTYPE __minifat_extract_ubnd(const void* ptr) {
+
+PTRTYPE __minifat_extract_size(const void* ptr) {
+    unsigned long long size = (unsigned long long )ptr & MINIFAT_MASK;
+    size = size >> (64 - MINIFAT_BASE_SIZE);
+    return size ? (1ull << size) : 0;
+}
+
+ PTRTYPE __minifat_extract_ubnd(const void* ptr) {
     if(ptr == NULL)
         return NULL;
     unsigned long long size = (unsigned long long )ptr & MINIFAT_MASK;
@@ -38,9 +45,9 @@ INLINEATTR PTRTYPE __minifat_extract_ubnd(const void* ptr) {
     unsigned long long alloca_size = 1ull << size;
     if(alloca_size <= 1)
         return NULL;
-    return ((unsigned long long )ptr & MINIFAT_MATCH & alloca_size) + (alloca_size - 1);
+    return ((unsigned long long )ptr & MINIFAT_MATCH & ~(alloca_size-1)) + (alloca_size - 1);
 }
-INLINEATTR void* __minifat_combine_ptr(const void* ptrval, PTRTYPE ubnd) {
+ void* __minifat_combine_ptr(const void* ptrval, PTRTYPE ubnd) {
     if(ubnd == NULL && ptrval == NULL)
         return NULL;
     if(ubnd == NULL && ptrval != NULL)
@@ -57,7 +64,8 @@ INLINEATTR void* __minifat_combine_ptr(const void* ptrval, PTRTYPE ubnd) {
     return ptrval + num;
 
 }
+
 // todo if doesnot know the size
-INLINEATTR PTRTYPE __minifat_highest_bound(){
+PTRTYPE __minifat_highest_bound(){
     return 0x8000000000000ull;
 }
