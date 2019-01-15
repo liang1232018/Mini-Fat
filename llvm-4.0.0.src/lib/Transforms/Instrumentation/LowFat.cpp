@@ -2639,6 +2639,11 @@ static void gvMakeInst(Instruction *I)
     }
 }
 /*
+* set for no need to mask the size
+*/
+static std::set<std::string> function_set;
+
+/*
 * Minifat_Pass
 * this function is for mask the minifat-ptr
 */
@@ -2656,6 +2661,7 @@ static void maskInst(Instruction *I)
         auto OI = Load->op_begin();
         if(OI != Load->op_end() && (*OI)->getType()->getTypeID () == 15)
             *OI = TPtr;
+        Load->setVolatile(true);
 
     } else if(StoreInst *Store = dyn_cast<StoreInst>(I) ) {
         IRBuilder<> builder(Store);
@@ -2794,6 +2800,22 @@ static void maskInst(Instruction *I)
                 *(OI+i) = TArg;
                 
             }
+         } else if (F != nullptr && (function_set.find(F->getName()) == function_set.end() && F->getName().find("minifat") == string::npos) ) {
+            IRBuilder<> builder(Call);
+            auto OI = Call->op_begin();
+            for (unsigned i = 0; i < Call->getNumArgOperands(); i++)
+            {
+                Value *Arg = Call->getArgOperand(i);
+                if(Arg->getType()->getTypeID () != 15) {
+                    continue;
+                }
+                Value* TArg = builder.CreateBitCast(Arg, builder.getInt64Ty());
+                TArg = builder.CreateAnd(TArg,0x03FFFFFFFFFFFFFF);
+                TArg = builder.CreateBitCast(TArg, Arg->getType());
+
+                *(OI+i) = TArg;
+                
+            }
         } else {
             IRBuilder<> builder(Call);
             auto OI = Call->op_begin();
@@ -2850,6 +2872,16 @@ struct LowFat : public ModulePass
             return true;
 
         
+         for (auto &F: M)
+        {
+            if (F.isDeclaration())
+                continue;
+            if (isBlacklisted(Blacklist.get(), &F))
+                continue;
+
+            function_set.insert(F.getName());
+        }
+
         // PASS (1): Bounds instrumentation
         const TargetLibraryInfo &TLI =
             getAnalysis<TargetLibraryInfoWrapperPass>().getTLI();
