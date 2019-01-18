@@ -532,6 +532,12 @@ extern void lowfat_oob_check(unsigned info, const void *ptr, size_t size0,
         lowfat_oob_error(info, ptr, baseptr);
 }
 
+extern void lowfat_oob_check_bound(unsigned info, const void *ptr, size_t size0,
+    const void *baseptr,const void *bound)
+{
+    ;
+}
+
 #if !defined(LOWFAT_DATA_ONLY) && !defined(LOWFAT_STANDALONE) && \
     !defined(LOWFAT_WINDOWS)
 
