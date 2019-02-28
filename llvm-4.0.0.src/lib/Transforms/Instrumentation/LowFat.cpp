@@ -2125,13 +2125,14 @@ static void addLowFatFuncs(Module *M)
         Value *size_base = builder.CreateAnd(NBasePtr,0xFC00000000000000);
         size_base = builder.CreateLShr(size_base,58);
         Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
+        Value *RealSize = builder.CreateSub(Size,AccessSize);
         // BasePtr = builder.CreateBitCast(BasePtr, builder.getInt8PtrTy());
 
         // // The check is: if (ptr - base > size - sizeof(*ptr)) error();
         Value *IPtr = builder.CreatePtrToInt(Ptr, builder.getInt64Ty());
         Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
         Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
-        Bound = builder.CreateAdd(Bound,Size);
+        Bound = builder.CreateAdd(Bound,RealSize);
         Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
 
         IBasePtr = builder.CreateAnd(IBasePtr,0x03FFFFFFFFFFFFFF);
@@ -2144,8 +2145,9 @@ static void addLowFatFuncs(Module *M)
         Value *TRPtr = builder.CreateSelect(Cmp2,Ptr,BasePtr);
 
         Value *Diff = builder.CreateSub(IPtr, IBasePtr);
-        Size = builder.CreateSub(Size, AccessSize);
-        Value *Cmp = builder.CreateICmpUGE(Diff, Size);
+        // Size = builder.CreateSub(Size, AccessSize);
+        // Value *Cmp = builder.CreateICmpUGE(Diff, Size);
+        Value *Cmp = builder.CreateICmpUGE(Diff, RealSize);
         // builder5.CreateCondBr(Cmp, Error, Return);
 
         Value *RPtr = builder.CreateSelect(Cmp,Bound,TRPtr);
@@ -2239,6 +2241,7 @@ static void addLowFatFuncs(Module *M)
         Value *size_base = builder.CreateAnd(NBasePtr,0xFC00000000000000);
         size_base = builder.CreateLShr(size_base,58);
         Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
+        Bound = builder.CreateSub(Bound,AccessSize);
         // BasePtr = builder.CreateBitCast(BasePtr, builder.getInt8PtrTy());
 
         // // The check is: if (ptr - base > size - sizeof(*ptr)) error();
@@ -2293,7 +2296,8 @@ static void addLowFatFuncs(Module *M)
         // 下面是认为全有size的
         Value *Bound = builder.CreatePtrToInt(BasePtr,
             builder.getInt64Ty());
-        Bound = builder.CreateAdd(Bound,Size);
+        Value *RealSize = builder.CreateSub(Size,AccessSize);
+        Bound = builder.CreateAdd(Bound,RealSize);
         Bound = builder.CreateBitCast(Bound, builder.getInt8PtrTy());
 
         // // The check is: if (ptr - base > size - sizeof(*ptr)) error();
@@ -2309,8 +2313,9 @@ static void addLowFatFuncs(Module *M)
         Value *TRPtr = builder.CreateSelect(Cmp2,Ptr,BasePtr);
 
         Value *Diff = builder.CreateSub(IPtr, IBasePtr);
-        Size = builder.CreateSub(Size, AccessSize);
-        Value *Cmp = builder.CreateICmpUGE(Diff, Size);
+        // Size = builder.CreateSub(Size, AccessSize);
+        // Value *Cmp = builder.CreateICmpUGE(Diff, Size);
+        Value *Cmp = builder.CreateICmpUGE(Diff, RealSize);
         // builder5.CreateCondBr(Cmp, Error, Return);
 
         Value *RPtr = builder.CreateSelect(Cmp,Bound,TRPtr);
