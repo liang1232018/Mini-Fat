@@ -64,7 +64,7 @@ build_llvm()
     if [ x$CONFIGURE = xtrue ]
     then
         CC=$CLANG CXX=$CLANGXX cmake ../llvm-4.0.0.src/ \
-            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_BUILD_TYPE=Release -DLLVM_TARGETS_TO_BUILD="AArch64"
     fi
     make -j `nproc`
     cd ..

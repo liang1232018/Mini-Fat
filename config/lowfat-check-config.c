@@ -43,6 +43,7 @@ void *worker(void *arg)
 
 int main(int argc, char **argv)
 {
+/*
     pthread_t thread;
     int err = pthread_create(&thread, NULL, worker, NULL);
     if (err != 0)
@@ -67,5 +68,6 @@ int main(int argc, char **argv)
 
     printf("OK\n");
     return 0;
+*/
 }
 

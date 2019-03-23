@@ -392,9 +392,11 @@ int main(int argc, char **argv)
     // Check for LZCNT/BMI support:
     bool legacy = false;
     uint32_t eax, ebx, ecx, edx;
+    /*
     CPUID(7, 0, eax, ebx, ecx, edx);
     if (((ebx >> 3) & 1) == 0 || ((ebx >> 8) & 1) == 0)
         legacy = true;
+    */
 
     // Check for power-of-two sizes:
     bool ispow2 = true;

@@ -5,11 +5,11 @@ set(LOWFAT_SOURCES
 
 include_directories(..)
 
-set(LOWFAT_CFLAGS -std=gnu99 -m64 -mno-bmi -mno-bmi2 -mno-lzcnt -I. -O2 -mcmodel=large -DLOWFAT_LINUX)
+set(LOWFAT_CFLAGS -std=gnu99 -I. -O2 -DLOWFAT_LINUX)
 
 add_compiler_rt_runtime(clang_rt.lowfat
         STATIC
-        ARCHS x86_64 
+        ARCHS aarch64
         SOURCES ${LOWFAT_SOURCES}
         CFLAGS ${LOWFAT_CFLAGS}
         PARENT_TARGET lowfat)

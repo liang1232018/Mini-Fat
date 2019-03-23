@@ -221,13 +221,14 @@ void LOWFAT_CONSTRUCTOR lowfat_init(void)
         lowfat_error("incompatible system page size (expected %u; got %ld)",
             LOWFAT_PAGE_SIZE, sysconf(_SC_PAGESIZE));
 #endif
+/*
 #if !defined(LOWFAT_LEGACY)
     uint32_t eax, ebx, ecx, edx;
     LOWFAT_CPUID(7, 0, eax, ebx, ecx, edx);
     if (((ebx >> 3) & 1) == 0 || ((ebx >> 8) & 1) == 0)
         lowfat_error("incompatible architecture (no BMI/BMI2 support)");
 #endif
- 
+*/ 
     // Random seed memory:
     lowfat_seed = (uint8_t *)lowfat_map(NULL, LOWFAT_PAGE_SIZE, true, true, -1);
     if (lowfat_seed == NULL)
@@ -574,7 +575,7 @@ extern LOWFAT_NOINLINE void *lowfat_stack_pivot_2(void *stack_top)
     return stack_base - size;
 }
 
-__asm__ (
+/*__asm__ (
     "\t.align 16, 0x90\n"
     "\t.type lowfat_stack_pivot,@function\n"
     "lowfat_stack_pivot:\n"
@@ -584,6 +585,7 @@ __asm__ (
     "\tmovq %rax, %rsp\n"
     "\tretq\n"
 );
+*/
 
 /*
  * This bit of magic ensures lowfat_init() is called very early in process
