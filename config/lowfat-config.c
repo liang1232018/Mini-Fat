@@ -560,7 +560,8 @@ static void compile(FILE *stream, FILE *hdr_stream, FILE *ld_stream,
 
     if (ld_stream != NULL)
     {
-        fprintf(ld_stream, "/* AUTOMATICALLY GENERATED */\n");
+//        fprintf(ld_stream, "/* AUTOMATICALLY GENERATED */\n");
+/*
         fprintf(ld_stream, "\n");
         fprintf(ld_stream, "SECTIONS\n");
         fprintf(ld_stream, "{\n");
@@ -608,8 +609,9 @@ static void compile(FILE *stream, FILE *hdr_stream, FILE *ld_stream,
         fprintf(ld_stream, "\t}\n");
         fprintf(ld_stream, "}\n");
         fprintf(ld_stream, "\n");
-        fprintf(ld_stream, "INSERT AFTER .gnu.attributes;\n");
-        fprintf(ld_stream, "\n");
+        //fprintf(ld_stream, "INSERT AFTER .gnu.attributes;\n");
+        //fprintf(ld_stream, "\n");
+*/    
     }
 
     fprintf(stream, "/* AUTOMATICALLY GENERATED */\n");

@@ -226,8 +226,11 @@ SanitizerArgs::SanitizerArgs(const ToolChain &TC,
         DiagnosedKinds |= KindsToDiagnose;
       }
       Add &= ~InvalidTrappingKinds;
-      if (SanitizerMask KindsToDiagnose = Add & ~Supported & ~DiagnosedKinds) {
-        std::string Desc = describeSanitizeArg(*I, KindsToDiagnose);
+//      if (SanitizerMask KindsToDiagnose = Add & ~Supported & ~DiagnosedKinds) {
+      printf("%d %d %d\n",Add,Supported, DiagnosedKinds);
+      if(false) {
+      SanitizerMask KindsToDiagnose = Add; 
+      std::string Desc = describeSanitizeArg(*I, KindsToDiagnose);
         D.Diag(diag::err_drv_unsupported_opt_for_target)
             << Desc << TC.getTriple().str();
         DiagnosedKinds |= KindsToDiagnose;

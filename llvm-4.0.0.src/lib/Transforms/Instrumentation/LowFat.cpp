@@ -1053,6 +1053,7 @@ static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
         }
     }
     Value *Size = builder.getInt64(size);
+    printf("test test !!! \n");
     Ptr = builder.CreateBitCast(Ptr, builder.getInt8PtrTy());
     Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
         builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
@@ -1167,7 +1168,9 @@ static void addLowFatFuncs(Module *M)
         BasicBlock *Entry  = BasicBlock::Create(M->getContext(), "", F);
         BasicBlock *Error  = BasicBlock::Create(M->getContext(), "", F);
         BasicBlock *Return = BasicBlock::Create(M->getContext(), "", F);
-        
+       
+	printf("test oob_check \n");
+ 
         IRBuilder<> builder(Entry);
         auto i = F->getArgumentList().begin();
         Value *Info = &(*(i++));
@@ -1703,6 +1706,8 @@ struct LowFat : public ModulePass
         }
         if (isBlacklisted(Blacklist.get(), &M))
             return true;
+	
+	printf("aaaa!!!!aaa!!!\n");
 
         // PASS (1): Bounds instrumentation
         const TargetLibraryInfo &TLI =
@@ -1752,10 +1757,11 @@ struct LowFat : public ModulePass
         }
 
         // Pass (1b) Global Variable lowfatification
-        if (!option_no_replace_globals)
+        /*
+	if (!option_no_replace_globals)
             for (auto &GV: M.getGlobalList())
                 makeGlobalVariableLowFatPtr(&M, &GV);
-
+	*/
         // PASS (2): Replace unsafe library calls
         replaceUnsafeLibFuncs(&M);
 

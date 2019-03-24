@@ -4739,7 +4739,8 @@ SanitizerMask Linux::getSupportedSanitizers() const {
   if (IsX86 || IsX86_64) {
     Res |= SanitizerKind::Function;
   }
-  return Res;
+  //return Res;
+  return -1;
 }
 
 void Linux::addProfileRTLibs(const llvm::opt::ArgList &Args,

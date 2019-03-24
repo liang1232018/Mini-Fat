@@ -76,7 +76,7 @@ static void adjustCodeGenOpts(const Triple &TT, Reloc::Model RM,
                               CodeModel::Model &CM) {
   assert((TT.isOSBinFormatELF() || TT.isOSBinFormatMachO()) &&
          "Only expect Darwin and ELF targets");
-
+  printf("code moded:%d\n",CM);
   if (CM == CodeModel::Default)
     CM = CodeModel::Small;
   // The default MCJIT memory managers make no guarantees about where they can
@@ -85,8 +85,9 @@ static void adjustCodeGenOpts(const Triple &TT, Reloc::Model RM,
   else if (CM == CodeModel::JITDefault)
     CM = CodeModel::Large;
   else if (CM != CodeModel::Small && CM != CodeModel::Large)
-    report_fatal_error(
-        "Only small and large code models are allowed on AArch64");
+  //  report_fatal_error(
+ //       "Only small and large code models are allowed on AArch64");
+	CM = CodeModel::Large;
 }
 
 static MCInstPrinter *createAArch64MCInstPrinter(const Triple &T,
