@@ -19,10 +19,11 @@
  */
 extern void *lowfat_memset(void *dst, int c, size_t n)
 {
-    size_t size = lowfat_buffer_size(dst);
+    size_t size = minifat_buffer_size(dst);
+    printf("wrong way\n");
     if (size < n)
         lowfat_oob_error(LOWFAT_OOB_ERROR_MEMSET, (uint8_t *)dst + size,
-            lowfat_base(dst));
+            /*lowfat_base*/minifat_base(dst));
     return memset(dst, c, n);
 }
 
@@ -31,14 +32,14 @@ extern void *lowfat_memset(void *dst, int c, size_t n)
  */
 extern void *lowfat_memmove(void *dst, const void *src, size_t n)
 {
-    size_t src_size = lowfat_buffer_size(src);
+    size_t src_size = minifat_buffer_size(src);
     if (src_size < n)
         lowfat_oob_error(LOWFAT_OOB_ERROR_MEMCPY, (uint8_t *)src + src_size,
-            lowfat_base(src));
-    size_t dst_size = lowfat_buffer_size(dst);
+            /*lowfat_base*/minifat_base(src));
+    size_t dst_size = minifat_buffer_size(dst);
     if (dst_size < n)
         lowfat_oob_error(LOWFAT_OOB_ERROR_MEMCPY, (uint8_t *)dst + dst_size,
-            lowfat_base(dst));
+            /*lowfat_base*/(dst));
     return memmove(dst, src, n);
 }
 
