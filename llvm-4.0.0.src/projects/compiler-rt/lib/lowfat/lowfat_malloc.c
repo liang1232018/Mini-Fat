@@ -239,6 +239,8 @@ extern void *lowfat_malloc(size_t size) {
 }
 
 extern void *minifat_malloc(size_t size) {
+    if(size < 8)
+        size = 8;
     uint64_t coded_size = (64 - clz((uint64_t)size)) & 0x3F;
     uint64_t alloc_size = 1ull << coded_size;
     void *ptr = NULL;
@@ -463,10 +465,10 @@ extern void *minifat_realloc(void *ptr, uint64_t size) {
         cpy_size = 8;
     }
     else {
-        cpy_size = 1 << ((64 - clz(size)) & 0x3F);
+        cpy_size = 1ull << ((64 - clz(size)) & 0x3F);
     }
 
-    uint64_t ptr_size = 1 << ((~(uint64_t)ptr >> 58) & 0x3F);
+    uint64_t ptr_size = 1ull << ((~(uint64_t)ptr >> 58) & 0x3F);
     if(~(uint64_t)ptr >> 58 != 0x3F ) {
         cpy_size = (cpy_size < ptr_size ? cpy_size : ptr_size);
 

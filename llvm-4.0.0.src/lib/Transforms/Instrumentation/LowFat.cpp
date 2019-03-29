@@ -66,6 +66,7 @@ typedef map<Value *, Value *> PtrInfo;
 // 用于计算bound相关信息的
 PtrInfo boundInfo;
 PtrInfo sizeInfo;
+vector<Value*> maskInfo;
 /*
  * A bounds object represents a range lb..ub.  As a simplification, the lower
  * bounds is always fixed to (0) since 99% of the time this is sufficient.
@@ -649,13 +650,19 @@ static Value *calcBasePtr(Function *F, Value *Ptr)
     Value *size_base = builder.CreateAnd(NBasePtr,0xFC00000000000000);
     size_base = builder.CreateLShr(size_base,58);
     Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
-    sizeInfo.insert(make_pair(BasePtr,Size));
-    // Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
-    // Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
-    // Bound = builder.CreateAdd(Bound,Size);
-    // Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
-    // boundInfo.insert(make_pair(BasePtr, Bound));
-
+    // sizeInfo.insert(make_pair(BasePtr,Size));
+    Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
+    Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
+    Bound = builder.CreateAdd(Bound,Size);
+    Bound = builder.CreateShl(Bound,8);
+    Value *isNull = builder.CreateIsNull(Bound);
+    Bound = builder.CreateSelect(isNull, builder.getInt64(0xFFFFFFFFFFFFFFFF),Bound);
+    Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
+    BasePtr = builder.CreateBitCast(BasePtr, builder.getInt64Ty());
+    BasePtr = builder.CreateShl(BasePtr,8);
+    BasePtr = builder.CreateBitCast(BasePtr, builder.getInt8PtrTy());
+    boundInfo.insert(make_pair(BasePtr, Bound));
+printf("aaa6666!\n");
     return BasePtr;
 }
 
@@ -705,6 +712,22 @@ static Constant *calcBasePtr(const TargetLibraryInfo *TLI, Function *F,
                 baseInfo);
             BasePtr = ConstantExpr::getSelect(CE->getOperand(0), BasePtrA,
                 BasePtrB);
+printf("aaa77777!\n");
+            // IRBuilder<> builder(BasePtr);
+            // Value* IBasePtr = builder.CreateBitCast(BasePtr,builder.getInt64Ty());
+            // Value* NBasePtr = builder.CreateNot(IBasePtr);
+            // Value *size_base = builder.CreateAnd(NBasePtr,0xFC00000000000000);
+            // size_base = builder.CreateLShr(size_base,58);
+            // Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
+
+            // Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
+            // Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
+            // Bound = builder.CreateAdd(Bound,Size);
+            // Bound = builder.CreateShl(Bound,8);
+            // Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
+            // boundInfo.insert(make_pair(BasePtr, Bound));
+
+            // BasePtr = builder.CreateShl(BasePtr,8);
             break;
         }
         case Instruction::IntToPtr:
@@ -764,12 +787,20 @@ static Value *calcBasePtr(const TargetLibraryInfo *TLI, Function *F,
             Value *size_base = builder.CreateAnd(NBasePtr,0xFC00000000000000);
             size_base = builder.CreateLShr(size_base,58);
             Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
-            sizeInfo.insert(make_pair(BasePtr,Size));
-            // Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
-            // Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
-            // Bound = builder.CreateAdd(Bound,Size);
-            // Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
-            // boundInfo.insert(make_pair(BasePtr, Bound));
+            // sizeInfo.insert(make_pair(BasePtr,Size));
+            Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
+            Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
+            Bound = builder.CreateAdd(Bound,Size);
+            Bound = builder.CreateShl(Bound,8);
+            Value *isNull = builder.CreateIsNull(Bound);
+            Bound = builder.CreateSelect(isNull, builder.getInt64(0xFFFFFFFFFFFFFFFF),Bound);
+            Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
+
+            BasePtr = builder.CreateBitCast(BasePtr, builder.getInt64Ty());
+            BasePtr = builder.CreateShl(BasePtr,8);
+            BasePtr = builder.CreateBitCast(BasePtr, builder.getInt8PtrTy());
+            boundInfo.insert(make_pair(BasePtr, Bound));
+printf("aaa5555!\n");
         }
     }
     else if (BitCastInst *Cast = dyn_cast<BitCastInst>(Ptr))
@@ -790,12 +821,20 @@ static Value *calcBasePtr(const TargetLibraryInfo *TLI, Function *F,
         Value *size_base = builder.CreateAnd(NBasePtr,0xFC00000000000000);
         size_base = builder.CreateLShr(size_base,58);
         Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
-        sizeInfo.insert(make_pair(BasePtr,Size));
-        // Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
-        // Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
-        // Bound = builder.CreateAdd(Bound,Size);
-        // Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
-        // boundInfo.insert(make_pair(BasePtr, Bound));
+        // sizeInfo.insert(make_pair(BasePtr,Size));
+        Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
+        Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
+        Bound = builder.CreateAdd(Bound,Size);
+        // Bound = builder.CreateShl(Bound,8);
+        Value *isNull = builder.CreateIsNull(Bound);
+        Bound = builder.CreateSelect(isNull, builder.getInt64(0xFFFFFFFFFFFFFFFF),Bound);
+        Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
+
+        BasePtr = builder.CreateBitCast(BasePtr, builder.getInt64Ty());
+        // BasePtr = builder.CreateShl(BasePtr,8);
+        BasePtr = builder.CreateBitCast(BasePtr, builder.getInt8PtrTy());
+        boundInfo.insert(make_pair(BasePtr, Bound));
+printf("aaa434444!\n");
     }
     else if (Constant *C = dyn_cast<Constant>(Ptr))
         BasePtr = calcBasePtr(TLI, F, C, baseInfo);
@@ -819,12 +858,21 @@ static Value *calcBasePtr(const TargetLibraryInfo *TLI, Function *F,
             Value *size_base = builder.CreateAnd(NBasePtr,0xFC00000000000000);
             size_base = builder.CreateLShr(size_base,58);
             Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
-            sizeInfo.insert(make_pair(BasePtr,Size));
-            // Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
-            // Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
-            // Bound = builder.CreateAdd(Bound,Size);
-            // Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
-            // boundInfo.insert(make_pair(BasePtr, Bound));
+            // sizeInfo.insert(make_pair(BasePtr,Size));
+            Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
+            Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
+            Bound = builder.CreateAdd(Bound,Size);
+            Bound = builder.CreateShl(Bound,8);
+            Value *isNull = builder.CreateIsNull(Bound);
+            Bound = builder.CreateSelect(isNull, builder.getInt64(0xFFFFFFFFFFFFFFFF),Bound);
+            Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
+
+            BasePtr = builder.CreateBitCast(BasePtr, builder.getInt64Ty());
+            BasePtr = builder.CreateShl(BasePtr,8);
+            BasePtr = builder.CreateBitCast(BasePtr, builder.getInt8PtrTy());
+            boundInfo.insert(make_pair(BasePtr, Bound));
+            printf("aaa333!\n");
+
         }
         else
             BasePtr = calcBasePtr(F, Ptr);
@@ -835,7 +883,27 @@ static Value *calcBasePtr(const TargetLibraryInfo *TLI, Function *F,
         IRBuilder<> builder(PHI);
         PHINode *BasePHI = builder.CreatePHI(builder.getInt8PtrTy(),
             numValues);
+        // Value* IBasePtr = builder.CreateBitCast(BasePHI,builder.getInt64Ty());
+        // Value* NBasePtr = builder.CreateNot(IBasePtr);
+        // Value *size_base = builder.CreateAnd(NBasePtr,0xFC00000000000000);
+        // size_base = builder.CreateLShr(size_base,58);
+        // Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
+
+        // Value *Bound =  builder.CreateBitCast(BasePHI,builder.getInt64Ty());
+        // Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
+        // Bound = builder.CreateAdd(Bound,Size);
+        // Bound = builder.CreateShl(Bound,8);
+        // Value *isNull = builder.CreateIsNull(Bound);
+        // Bound = builder.CreateSelect(isNull, builder.getInt64(0xFFFFFFFFFFFFFFFF),Bound);
+        // Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());       
+        printf("aaa222!\n");
+        // Value *TBasePtr = builder.CreateBitCast(BasePHI,builder.getInt64Ty());
+        // TBasePtr = builder.CreateShl(TBasePtr,8);
+        // TBasePtr = builder.CreateBitCast(TBasePtr,builder.getInt8PtrTy());
+        // baseInfo.insert(make_pair(Ptr, TBasePtr));
+        // boundInfo.insert(make_pair(TBasePtr, Bound));
         baseInfo.insert(make_pair(Ptr, BasePHI));
+
         for (size_t i = 0; i < numValues; i++)
             BasePHI->addIncoming(UndefValue::get(builder.getInt8PtrTy()),
                 PHI->getIncomingBlock(i));
@@ -1138,19 +1206,19 @@ static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
         // printf("check_nums %d\n",check_nums);
         if(j == boundInfo.end() && k == sizeInfo.end())
         {
-            Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
-            builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
-            builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
             // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
-            //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
-            //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
-            TPtr = builder.CreateCall(BoundsCheck,
-                {builder.getInt32(info), TPtr, Size, BasePtr});
+            // builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+            // builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+            // // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
+            // //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+            // //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+            // TPtr = builder.CreateCall(BoundsCheck,
+            //     {builder.getInt32(info), TPtr, Size, BasePtr});
             // builder.CreateCall(BoundsCheck,
             //     {builder.getInt32(info), TPtr, Size, BasePtr});
-        } else if (k == sizeInfo.end()){
+        } else /*if (k == sizeInfo.end())*/ {
             Value* Bound = j->second;
-            Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_bound",
+            Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_bound_new",
             builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
             builder.getInt64Ty(), builder.getInt8PtrTy(),builder.getInt8PtrTy(), nullptr);
             // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
@@ -1160,52 +1228,71 @@ static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
                 {builder.getInt32(info), TPtr, Size, BasePtr,Bound});
             // builder.CreateCall(BoundsCheck,
             //     {builder.getInt32(info), TPtr, Size, BasePtr});
-        } else {
-            Value* TSize = k->second;
-            Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_size",
-            builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
-            builder.getInt64Ty(), builder.getInt8PtrTy(),builder.getInt64Ty(), nullptr);
-            // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
-            //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
-            //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
-            TPtr = builder.CreateCall(BoundsCheck,
-                {builder.getInt32(info), TPtr, Size, BasePtr,TSize});
-            // builder.CreateCall(BoundsCheck,
-            //     {builder.getInt32(info), TPtr, Size, BasePtr});
-        }
-        
-        if(LoadInst *Load = dyn_cast<LoadInst>(I)) {
-            auto OI = Load->op_begin();
-            if(OI != Load->op_end() && (*OI)->getType()->getTypeID () == 15)
-                *OI = TPtr;
 
-        } else if(StoreInst *Store = dyn_cast<StoreInst>(I) ) {
-            if(info != LOWFAT_OOB_ERROR_ESCAPE_STORE) {
-                auto OI = Store->op_begin();
-                OI++;
-                if(OI != Store->op_end() && (*OI)->getType()->getTypeID () == 15)
-                    *OI = TPtr;     
-            }
-                    
-        } else if (MemSetInst *MI = dyn_cast<MemSetInst>(I)) {
-            TPtr = builder.CreateBitCast(TPtr, builder.getInt64Ty());
-            Value *mem_size = MI->getOperand(2);
-            TPtr = builder.CreateSub(TPtr,mem_size);
-            TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
 
-            auto OI = MI->op_begin();
-            *OI = TPtr;
-        } else if (MemTransferInst *MI = dyn_cast<MemTransferInst>(I)) {
-            if(info == LOWFAT_OOB_ERROR_MEMCPY_ONE) {
+            if(LoadInst *Load = dyn_cast<LoadInst>(I)) {
+                auto OI = Load->op_begin();
+                if(OI != Load->op_end() && (*OI)->getType()->getTypeID () == 15){
+                    *OI = TPtr;  
+                    maskInfo.push_back(TPtr);
+                }
+            } else if(StoreInst *Store = dyn_cast<StoreInst>(I) ) {
+                if(info != LOWFAT_OOB_ERROR_ESCAPE_STORE) {
+                    auto OI = Store->op_begin();
+                    OI++;
+                    if(OI != Store->op_end() && (*OI)->getType()->getTypeID () == 15) {
+                        *OI = TPtr;     
+                        maskInfo.push_back(TPtr);
+                    }
+                        
+                }
+                        
+            } else if (MemSetInst *MI = dyn_cast<MemSetInst>(I)) {
+                TPtr = builder.CreateBitCast(TPtr, builder.getInt64Ty());
+                Value *mem_size = MI->getOperand(2);
+                TPtr = builder.CreateSub(TPtr,mem_size);
+                TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
+
                 auto OI = MI->op_begin();
                 *OI = TPtr;
-            } else if(info == LOWFAT_OOB_ERROR_MEMCPY_TWO) {
-                auto OI = MI->op_begin();
-                OI++;
-                *OI = TPtr;
-            }
+                maskInfo.push_back(TPtr);
+            } else if (MemTransferInst *MI = dyn_cast<MemTransferInst>(I)) {
+                if(info == LOWFAT_OOB_ERROR_MEMCPY_ONE) {
+                    auto OI = MI->op_begin();
+                    *OI = TPtr;
+                    maskInfo.push_back(TPtr);
+                } else if(info == LOWFAT_OOB_ERROR_MEMCPY_TWO) {
+                    auto OI = MI->op_begin();
+                    OI++;
+                    *OI = TPtr;
+                    maskInfo.push_back(TPtr);
+                }
+            } 
         } 
+        // else if(j == boundInfo.end()){
+        //     Value* TSize = k->second;
+        //     Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_size",
+        //     builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+        //     builder.getInt64Ty(), builder.getInt8PtrTy(),builder.getInt64Ty(), nullptr);
+        //     // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
+        //     //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+        //     //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+        //     TPtr = builder.CreateCall(BoundsCheck,
+        //         {builder.getInt32(info), TPtr, Size, BasePtr,TSize});
+        //     // builder.CreateCall(BoundsCheck,
+        //     //     {builder.getInt32(info), TPtr, Size, BasePtr});
+        // } else {
+        //     Value* Bound = j->second;
+        //     Value* TSize = k->second;
 
+        //     Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_bound_size",
+        //     builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+        //     builder.getInt64Ty(), builder.getInt8PtrTy(),builder.getInt8PtrTy(),builder.getInt64Ty(), nullptr);
+        //     TPtr = builder.CreateCall(BoundsCheck,
+        //         {builder.getInt32(info), TPtr, Size, BasePtr, Bound, TSize});
+        // }
+        
+        
 
     }    
     
@@ -2012,6 +2099,7 @@ static void addLowFatFuncs(Module *M)
     F = M->getFunction("lowfat_oob_check");
     if (F != nullptr)
     {
+        printf("aaa!\n");
         BasicBlock *Entry  = BasicBlock::Create(M->getContext(), "", F);
         // BasicBlock *Error  = BasicBlock::Create(M->getContext(), "", F);
         // BasicBlock *Return = BasicBlock::Create(M->getContext(), "", F);
@@ -2121,16 +2209,98 @@ static void addLowFatFuncs(Module *M)
 
         // 下面是认为全有size的
         Value *TBasePtr = builder.CreateBitCast(BasePtr, builder.getInt64Ty());
+        
         Value* NBasePtr = builder.CreateNot(TBasePtr);
         Value *size_base = builder.CreateAnd(NBasePtr,0xFC00000000000000);
         size_base = builder.CreateLShr(size_base,58);
+        
+        
+        // 中间的某种存在错误移位的写法
+        // Value *isZero = builder.CreateICmpEQ(size_base,builder.getInt64(0x3F));
+        // builder.CreateCondBr(isZero, Error, Return);
+
+        // IRBuilder<> builder2(Error);
+        // Value *ETBasePtr = builder2.CreateLShr(TBasePtr,8);
+        // Value *ESize = builder2.CreateShl(builder2.getInt64(1),size_base);
+        // Value *ERealSize = builder2.CreateSub(ESize,AccessSize);
+
+        // // // The check is: if (ptr - base > size - sizeof(*ptr)) error();
+        // Value *EIPtr = builder2.CreatePtrToInt(Ptr, builder2.getInt64Ty());
+        // Value *EBound =  builder2.CreateBitCast(ETBasePtr,builder2.getInt64Ty());
+        // EBound = builder2.CreateAnd(EBound,0x03FFFFFFFFFFFFFF);
+        // EBound = builder2.CreateAdd(EBound,ERealSize);
+        // EBound = builder2.CreateBitCast(EBound,builder2.getInt8PtrTy());
+
+        // IBasePtr = builder2.CreateAnd(IBasePtr,0x03FFFFFFFFFFFFFF);
+        // EIPtr = builder2.CreateAnd(EIPtr,0x03FFFFFFFFFFFFFF);
+
+        // // Value *RIBasePtr = builder.CreateBitCast(IBasePtr,builder.getInt8PtrTy());
+        // // Value *RIPtr = builder.CreateBitCast(IPtr,builder.getInt8PtrTy());
+
+        // Value *ECmp2 = builder2.CreateICmpUGE(EIPtr,ETBasePtr);
+        // Value *ETRPtr = builder2.CreateSelect(ECmp2,EIPtr,ETBasePtr);
+
+        // // Size = builder.CreateSub(Size, AccessSize);
+        // // Value *Cmp = builder.CreateICmpUGE(Diff, Size);
+        // Value *ECmp = builder2.CreateICmpUGE(ETRPtr, EBound);
+        // // builder5.CreateCondBr(Cmp, Error, Return);
+        // Value *ERPtr = builder2.CreateSelect(ECmp,EBound,ETRPtr);
+        // builder2.CreateRet(ERPtr);
+
+
+
+        // IRBuilder<> builder3(Return);
+        // Value *Size = builder3.CreateShl(builder3.getInt64(1),size_base);
+        // Value *RealSize = builder3.CreateSub(Size,AccessSize);
+        // // BasePtr = builder.CreateBitCast(BasePtr, builder.getInt8PtrTy());
+
+        // // // The check is: if (ptr - base > size - sizeof(*ptr)) error();
+        // Value *IPtr = builder3.CreatePtrToInt(Ptr, builder3.getInt64Ty());
+        // Value *Bound =  builder3.CreateBitCast(TBasePtr,builder3.getInt64Ty());
+        // Bound = builder3.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
+        // Bound = builder3.CreateAdd(Bound,RealSize);
+        // Bound = builder3.CreateBitCast(Bound,builder3.getInt8PtrTy());
+
+        // IBasePtr = builder3.CreateAnd(IBasePtr,0x03FFFFFFFFFFFFFF);
+        // IPtr = builder3.CreateAnd(IPtr,0x03FFFFFFFFFFFFFF);
+
+        // // Value *RIBasePtr = builder.CreateBitCast(IBasePtr,builder.getInt8PtrTy());
+        // // Value *RIPtr = builder.CreateBitCast(IPtr,builder.getInt8PtrTy());
+
+        // Value *Cmp2 = builder3.CreateICmpUGE(IPtr,TBasePtr);
+        // Value *TRPtr = builder3.CreateSelect(Cmp2,IPtr,TBasePtr);
+
+        // Value *Diff = builder3.CreateSub(IPtr, IBasePtr);
+        // // Size = builder.CreateSub(Size, AccessSize);
+        // // Value *Cmp = builder.CreateICmpUGE(Diff, Size);
+        // Value *Cmp = builder3.CreateICmpUGE(TRPtr, Bound);
+        // // builder5.CreateCondBr(Cmp, Error, Return);
+
+        // Value *RPtr = builder3.CreateSelect(Cmp,Bound,TRPtr);
+
+        
+        // // Value *Warning = M->getOrInsertFunction("lowfat_oob_test",
+        // //         builder.getInt8PtrTy(), builder.getInt32Ty(),
+        // //         builder.getInt8PtrTy(), builder.getInt8PtrTy(), nullptr);
+        // // builder.CreateCall(Warning, {Info, Ptr, BasePtr});
+        // // Ptr = builder.CreateAdd(Ptr,builder.getInt64(1));
+        // // RPtr =  builder3.CreateBitCast(RPtr,builder3.getInt64Ty());
+        // // RPtr = builder.CreateShl(RPtr,8);
+
+        // // RPtr = builder.CreateAnd(RPtr,0x03FFFFFFFFFFFFFF);
+        // // RPtr = builder.CreateLShr(RPtr,8);
+        
+        // // RPtr = builder3.CreateBitCast(RPtr,builder3.getInt8PtrTy());
+        // builder3.CreateRet(RPtr);
+        // // builder5.CreateRetVoid();
+
         Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
         Value *RealSize = builder.CreateSub(Size,AccessSize);
         // BasePtr = builder.CreateBitCast(BasePtr, builder.getInt8PtrTy());
 
         // // The check is: if (ptr - base > size - sizeof(*ptr)) error();
         Value *IPtr = builder.CreatePtrToInt(Ptr, builder.getInt64Ty());
-        Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
+        Value *Bound =  builder.CreateBitCast(TBasePtr,builder.getInt64Ty());
         Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
         Bound = builder.CreateAdd(Bound,RealSize);
         Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
@@ -2141,13 +2311,13 @@ static void addLowFatFuncs(Module *M)
         // Value *RIBasePtr = builder.CreateBitCast(IBasePtr,builder.getInt8PtrTy());
         // Value *RIPtr = builder.CreateBitCast(IPtr,builder.getInt8PtrTy());
 
-        Value *Cmp2 = builder.CreateICmpUGE(IPtr,IBasePtr);
-        Value *TRPtr = builder.CreateSelect(Cmp2,Ptr,BasePtr);
+        Value *Cmp2 = builder.CreateICmpUGE(IPtr,TBasePtr);
+        Value *TRPtr = builder.CreateSelect(Cmp2,IPtr,TBasePtr);
 
         Value *Diff = builder.CreateSub(IPtr, IBasePtr);
         // Size = builder.CreateSub(Size, AccessSize);
         // Value *Cmp = builder.CreateICmpUGE(Diff, Size);
-        Value *Cmp = builder.CreateICmpUGE(Diff, RealSize);
+        Value *Cmp = builder.CreateICmpUGE(TRPtr, Bound);
         // builder5.CreateCondBr(Cmp, Error, Return);
 
         Value *RPtr = builder.CreateSelect(Cmp,Bound,TRPtr);
@@ -2158,9 +2328,14 @@ static void addLowFatFuncs(Module *M)
         //         builder.getInt8PtrTy(), builder.getInt8PtrTy(), nullptr);
         // builder.CreateCall(Warning, {Info, Ptr, BasePtr});
         // Ptr = builder.CreateAdd(Ptr,builder.getInt64(1));
-        builder.CreateRet(RPtr);
-        // builder5.CreateRetVoid();
+        // RPtr =  builder3.CreateBitCast(RPtr,builder3.getInt64Ty());
+        // RPtr = builder.CreateShl(RPtr,8);
 
+        // RPtr = builder.CreateAnd(RPtr,0x03FFFFFFFFFFFFFF);
+        // RPtr = builder.CreateLShr(RPtr,8);
+        
+        // RPtr = builder3.CreateBitCast(RPtr,builder3.getInt8PtrTy());
+        builder.CreateRet(RPtr);
 
 
         // // // 添加我们的size获取方式 计算size是必须根据baseptr计算，新ptr不计算
@@ -2269,7 +2444,109 @@ static void addLowFatFuncs(Module *M)
         F->setLinkage(GlobalValue::InternalLinkage);
         F->addFnAttr(llvm::Attribute::AlwaysInline);
     }
+    F = M->getFunction("lowfat_oob_check_bound_new");
+    if (F != nullptr)
+    {
+        printf("test!!!\n");
+        BasicBlock *Entry  = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *Error  = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *Return = BasicBlock::Create(M->getContext(), "", F);
+        
+        // 多一次判断时使用
+        // BasicBlock *NullReturn = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *NullGo = BasicBlock::Create(M->getContext(), "", F);
+
+        IRBuilder<> builder(Entry);
+        auto i = F->getArgumentList().begin();
+        Value *Info = &(*(i++));
+        Value *Ptr = &(*(i++));
+        Value *AccessSize = &(*(i++));
+        Value *BasePtr = &(*(i++));
+        Value *Bound = &(*(i++));        
+
+        Value *IPtr = builder.CreateBitCast(Ptr,builder.getInt64Ty());
+        IPtr = builder.CreateShl(IPtr, 8);
+        IPtr = builder.CreateBitCast(IPtr, builder.getInt8PtrTy());
+
+        // Value *RIBasePtr = builder.CreateBitCast(IBasePtr,builder.getInt8PtrTy());
+        // Value *RIPtr = builder.CreateBitCast(IPtr,builder.getInt8PtrTy());
+
+        Value *Cmp2 = builder.CreateICmpUGE(IPtr,BasePtr);
+        Value *TRPtr = builder.CreateSelect(Cmp2,IPtr,BasePtr);
+
+        Value *Cmp = builder.CreateICmpUGE(TRPtr, Bound);
+        Value *RPtr = builder.CreateSelect(Cmp,Bound,TRPtr);
+
+        RPtr = builder.CreateBitCast(RPtr,builder.getInt64Ty());
+        RPtr = builder.CreateLShr(RPtr,8);
+        RPtr = builder.CreateBitCast(RPtr,Ptr->getType());
+        builder.CreateRet(RPtr);
+        
+        F->setOnlyReadsMemory();
+        F->setDoesNotThrow();
+        F->setLinkage(GlobalValue::InternalLinkage);
+        F->addFnAttr(llvm::Attribute::AlwaysInline);
+    }
     F = M->getFunction("lowfat_oob_check_size");
+    if (F != nullptr)
+    {
+        printf("cccc!\n");
+        BasicBlock *Entry  = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *Error  = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *Return = BasicBlock::Create(M->getContext(), "", F);
+        
+        // 多一次判断时使用
+        // BasicBlock *NullReturn = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *NullGo = BasicBlock::Create(M->getContext(), "", F);
+
+        IRBuilder<> builder(Entry);
+        auto i = F->getArgumentList().begin();
+        Value *Info = &(*(i++));
+        Value *Ptr = &(*(i++));
+        Value *AccessSize = &(*(i++));
+        Value *BasePtr = &(*(i++));
+        Value *Size = &(*(i++));
+
+
+        Value *IBasePtr = builder.CreatePtrToInt(BasePtr,
+            builder.getInt64Ty());
+        
+
+        // 下面是认为全有size的
+        Value *Bound = builder.CreatePtrToInt(BasePtr,
+            builder.getInt64Ty());
+        Value *RealSize = builder.CreateSub(Size,AccessSize);
+        Bound = builder.CreateAdd(Bound,RealSize);
+        Bound = builder.CreateBitCast(Bound, builder.getInt8PtrTy());
+
+        // // The check is: if (ptr - base > size - sizeof(*ptr)) error();
+        Value *IPtr = builder.CreatePtrToInt(Ptr, builder.getInt64Ty());
+
+        IBasePtr = builder.CreateAnd(IBasePtr,0x03FFFFFFFFFFFFFF);
+        IPtr = builder.CreateAnd(IPtr,0x03FFFFFFFFFFFFFF);
+
+        // Value *RIBasePtr = builder.CreateBitCast(IBasePtr,builder.getInt8PtrTy());
+        // Value *RIPtr = builder.CreateBitCast(IPtr,builder.getInt8PtrTy());
+
+        Value *Cmp2 = builder.CreateICmpUGE(IPtr,IBasePtr);
+        Value *TRPtr = builder.CreateSelect(Cmp2,Ptr,BasePtr);
+
+        Value *Diff = builder.CreateSub(IPtr, IBasePtr);
+        // Size = builder.CreateSub(Size, AccessSize);
+        // Value *Cmp = builder.CreateICmpUGE(Diff, Size);
+        Value *Cmp = builder.CreateICmpUGE(Diff, RealSize);
+        // builder5.CreateCondBr(Cmp, Error, Return);
+
+        Value *RPtr = builder.CreateSelect(Cmp,Bound,TRPtr);
+        builder.CreateRet(RPtr);
+        
+        F->setOnlyReadsMemory();
+        F->setDoesNotThrow();
+        F->setLinkage(GlobalValue::InternalLinkage);
+        F->addFnAttr(llvm::Attribute::AlwaysInline);
+    }
+    /*
+    F = M->getFunction("lowfat_oob_check_bound_size");
     if (F != nullptr)
     {
         BasicBlock *Entry  = BasicBlock::Create(M->getContext(), "", F);
@@ -2286,6 +2563,7 @@ static void addLowFatFuncs(Module *M)
         Value *Ptr = &(*(i++));
         Value *AccessSize = &(*(i++));
         Value *BasePtr = &(*(i++));
+        Value *Bound = &(*(i++));
         Value *Size = &(*(i++));
 
 
@@ -2343,7 +2621,7 @@ static void addLowFatFuncs(Module *M)
     //     F->setLinkage(GlobalValue::InternalLinkage);
     //     F->addFnAttr(llvm::Attribute::AlwaysInline);
     // }
-
+    */
     F = M->getFunction("lowfat_stack_allocsize");
     if (F != nullptr)
     {
@@ -2949,16 +3227,22 @@ static void maskInst(Instruction *I)
     if(LoadInst *Load = dyn_cast<LoadInst>(I)) {
         IRBuilder<> builder(Load);
         Value *Ptr =  Load->getOperand(0);
+        Load->setVolatile(true);
+        if(find(maskInfo.begin(), maskInfo.end(),Ptr) != maskInfo.end())
+            return;
         Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
         TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
         TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
         auto OI = Load->op_begin();
         if(OI != Load->op_end() && (*OI)->getType()->getTypeID () == 15)
             *OI = TPtr;
-        Load->setVolatile(true);
+        
     } else if(StoreInst *Store = dyn_cast<StoreInst>(I) ) {
         IRBuilder<> builder(Store);
         Value *Ptr =  Store->getOperand(1);
+        Store->setVolatile(true);
+        if(find(maskInfo.begin(), maskInfo.end(),Ptr) != maskInfo.end())
+            return;
         Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
         TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
         TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
@@ -2967,7 +3251,7 @@ static void maskInst(Instruction *I)
         if(OI != Store->op_end() && (*OI)->getType()->getTypeID () == 15)
             *OI = TPtr;
         
-        Store->setVolatile(true);
+        
         // // for (auto OI = I->op_end()-1, OE = I->op_begin(); OI >= OE; --OI) {
         // //     if((*OI)->getType()->getTypeID () == 15) {
         // //         *OI = TPtr;
@@ -2979,6 +3263,8 @@ static void maskInst(Instruction *I)
         // printf("no!!\n");
         IRBuilder<> builder(MI);
         Value *Ptr =  MI->getOperand(0);
+        if(find(maskInfo.begin(), maskInfo.end(),Ptr) != maskInfo.end())
+            return;
         Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
         TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
         TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
@@ -2990,8 +3276,10 @@ static void maskInst(Instruction *I)
         IRBuilder<> builder(MI);
         Value *mem_size = MI->getOperand(2);
         Value *Ptr =  MI->getOperand(0);
+        
         Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
-        TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
+        if(find(maskInfo.begin(), maskInfo.end(),Ptr) == maskInfo.end())
+            TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
         TPtr = builder.CreateSub(TPtr, mem_size);
         TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
         
@@ -3000,34 +3288,35 @@ static void maskInst(Instruction *I)
 
         Ptr =  MI->getOperand(1);
         TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
-        TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
+        if(find(maskInfo.begin(), maskInfo.end(),Ptr) == maskInfo.end())
+            TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
         TPtr = builder.CreateSub(TPtr, mem_size);
         TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
         OI++;
         *OI = TPtr;
-    } else if (CmpInst  *Cmp = dyn_cast<CmpInst >(I)) {
-        Value *Arg1 = Cmp->getOperand(0);
-        Value *Arg2 = Cmp->getOperand(1);
+    // } else if (CmpInst  *Cmp = dyn_cast<CmpInst >(I)) {
+    //     Value *Arg1 = Cmp->getOperand(0);
+    //     Value *Arg2 = Cmp->getOperand(1);
 
-        auto OI = Cmp->op_begin();
-        IRBuilder<> builder(Cmp);
-        if (Arg1!= NULL && Arg1->getType()->isPointerTy())
-        {    
-            Value* TArg1 = builder.CreateBitCast(Arg1, builder.getInt64Ty());
-            TArg1 = builder.CreateAnd(TArg1,0x03FFFFFFFFFFFFFF);
-            TArg1 = builder.CreateBitCast(TArg1, Arg1->getType());
+    //     auto OI = Cmp->op_begin();
+    //     IRBuilder<> builder(Cmp);
+    //     if (Arg1!= NULL && Arg1->getType()->isPointerTy())
+    //     {    
+    //         Value* TArg1 = builder.CreateBitCast(Arg1, builder.getInt64Ty());
+    //         TArg1 = builder.CreateLShr(TArg1,8);
+    //         TArg1 = builder.CreateBitCast(TArg1, Arg1->getType());
             
-            *OI = TArg1;
-        }  
+    //         *OI = TArg1;
+    //     }  
 
-        if (Arg2!= NULL && Arg2->getType()->isPointerTy())
-        {
-            Value* TArg2 = builder.CreateBitCast(Arg2, builder.getInt64Ty());
-            TArg2 = builder.CreateAnd(TArg2,0x03FFFFFFFFFFFFFF);
-            TArg2 = builder.CreateBitCast(TArg2, Arg2->getType());
-            OI++;
-            *OI = TArg2;
-        }
+    //     if (Arg2!= NULL && Arg2->getType()->isPointerTy())
+    //     {
+    //         Value* TArg2 = builder.CreateBitCast(Arg2, builder.getInt64Ty());
+    //         TArg2 = builder.CreateLShr(TArg2,8);
+    //         TArg2 = builder.CreateBitCast(TArg2, Arg2->getType());
+    //         OI++;
+    //         *OI = TArg2;
+    //     }
         
         
     }
@@ -3044,6 +3333,7 @@ static void maskInst(Instruction *I)
                     continue;
                 }
                 Value* TArg = builder.CreateBitCast(Arg, builder.getInt64Ty());
+                // TArg = builder.CreateLShr(TArg,8);
                 TArg = builder.CreateAnd(TArg,0x03FFFFFFFFFFFFFF);
                 TArg = builder.CreateBitCast(TArg, Arg->getType());
 
@@ -3060,6 +3350,7 @@ static void maskInst(Instruction *I)
                     continue;
                 }
                 Value* TArg = builder.CreateBitCast(Arg, builder.getInt64Ty());
+                // TArg = builder.CreateLShr(TArg,8);
                 TArg = builder.CreateAnd(TArg,0x03FFFFFFFFFFFFFF);
                 TArg = builder.CreateBitCast(TArg, Arg->getType());
 
@@ -3077,6 +3368,7 @@ static void maskInst(Instruction *I)
                     continue;
                 }
                 Value* TArg = builder.CreateBitCast(Arg, builder.getInt64Ty());
+                // TArg = builder.CreateLShr(TArg,8);
                 TArg = builder.CreateAnd(TArg,0x03FFFFFFFFFFFFFF);
                 TArg = builder.CreateBitCast(TArg, Arg->getType());
 
@@ -3093,6 +3385,7 @@ static void maskInst(Instruction *I)
                     continue;
                 }
                 Value* TArg = builder.CreateBitCast(Arg, builder.getInt64Ty());
+                // TArg = builder.CreateLShr(TArg,8);
                 TArg = builder.CreateAnd(TArg,0x03FFFFFFFFFFFFFF);
                 TArg = builder.CreateBitCast(TArg, Arg->getType());
 
@@ -3109,6 +3402,7 @@ static void maskInst(Instruction *I)
                 if( (*OI)->getType()->isPointerTy() && FI->hasByValAttr()) {
                     Value *Arg = *OI;
                     Value* TArg = builder.CreateBitCast(Arg, builder.getInt64Ty());
+                    // TArg = builder.CreateLShr(TArg,8);
                     TArg = builder.CreateAnd(TArg,0x03FFFFFFFFFFFFFF);
                     TArg = builder.CreateBitCast(TArg, Arg->getType());
 
@@ -3183,7 +3477,7 @@ struct LowFat : public ModulePass
                     baseInfo);
         }
 
-        // PASS (1a) Stack object lowfatification
+        // // PASS (1a) Stack object lowfatification
         for (auto &F: M)
         {
             if (F.isDeclaration())
@@ -3201,7 +3495,7 @@ struct LowFat : public ModulePass
                 makeAllocaLowFatPtr(&M, I);
         }
 
-        // Pass (1b) Global Variable lowfatification
+        // // Pass (1b) Global Variable lowfatification
         if (!option_no_replace_globals)
             for (auto &GV: M.getGlobalList())
                 makeGlobalVariableLowFatPtr(&M, &GV);
@@ -3220,21 +3514,21 @@ struct LowFat : public ModulePass
         // PASS (2): Replace unsafe library calls
         replaceUnsafeLibFuncs(&M);
 
-        // PASS (3): Add function definitions
+        // // PASS (3): Add function definitions
         addLowFatFuncs(&M);
 
-        // PASS (4): Optimize lowfat_malloc() calls
-        for (auto &F: M)
-        {
-            if (F.isDeclaration())
-                continue;
-            vector<Instruction *> dels;
-            for (auto &BB: F)
-                for (auto &I: BB)
-                    optimizeMalloc(&M, &I, dels);
-            for (auto &I: dels)
-                I->eraseFromParent();
-        }
+        // // PASS (4): Optimize lowfat_malloc() calls
+        // for (auto &F: M)
+        // {
+        //     if (F.isDeclaration())
+        //         continue;
+        //     vector<Instruction *> dels;
+        //     for (auto &BB: F)
+        //         for (auto &I: BB)
+        //             optimizeMalloc(&M, &I, dels);
+        //     for (auto &I: dels)
+        //         I->eraseFromParent();
+        // }
 
         //Pass (5): Mask所有的指针
         for (auto &F: M)
