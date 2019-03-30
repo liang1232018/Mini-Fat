@@ -654,12 +654,13 @@ static Value *calcBasePtr(Function *F, Value *Ptr)
     Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
     Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
     Bound = builder.CreateAdd(Bound,Size);
-    Bound = builder.CreateShl(Bound,8);
-    Value *isNull = builder.CreateIsNull(Bound);
+    // Bound = builder.CreateShl(Bound,8);
+    Value *isNull = builder.CreateICmpEQ(Bound,builder.getInt64(0));
     Bound = builder.CreateSelect(isNull, builder.getInt64(0xFFFFFFFFFFFFFFFF),Bound);
     Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
     BasePtr = builder.CreateBitCast(BasePtr, builder.getInt64Ty());
-    BasePtr = builder.CreateShl(BasePtr,8);
+    // BasePtr = builder.CreateShl(BasePtr,8);
+    BasePtr = builder.CreateAnd(BasePtr,0x03FFFFFFFFFFFFFF);
     BasePtr = builder.CreateBitCast(BasePtr, builder.getInt8PtrTy());
     boundInfo.insert(make_pair(BasePtr, Bound));
 printf("aaa6666!\n");
@@ -791,13 +792,14 @@ static Value *calcBasePtr(const TargetLibraryInfo *TLI, Function *F,
             Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
             Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
             Bound = builder.CreateAdd(Bound,Size);
-            Bound = builder.CreateShl(Bound,8);
-            Value *isNull = builder.CreateIsNull(Bound);
+            // Bound = builder.CreateShl(Bound,8);
+            Value *isNull = builder.CreateICmpEQ(Bound,builder.getInt64(0));
             Bound = builder.CreateSelect(isNull, builder.getInt64(0xFFFFFFFFFFFFFFFF),Bound);
             Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
 
             BasePtr = builder.CreateBitCast(BasePtr, builder.getInt64Ty());
-            BasePtr = builder.CreateShl(BasePtr,8);
+            // BasePtr = builder.CreateShl(BasePtr,8);
+            BasePtr = builder.CreateAnd(BasePtr,0x03FFFFFFFFFFFFFF);
             BasePtr = builder.CreateBitCast(BasePtr, builder.getInt8PtrTy());
             boundInfo.insert(make_pair(BasePtr, Bound));
 printf("aaa5555!\n");
@@ -826,12 +828,13 @@ printf("aaa5555!\n");
         Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
         Bound = builder.CreateAdd(Bound,Size);
         // Bound = builder.CreateShl(Bound,8);
-        Value *isNull = builder.CreateIsNull(Bound);
+        Value *isNull = builder.CreateICmpEQ(Bound,builder.getInt64(0));
         Bound = builder.CreateSelect(isNull, builder.getInt64(0xFFFFFFFFFFFFFFFF),Bound);
         Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
 
         BasePtr = builder.CreateBitCast(BasePtr, builder.getInt64Ty());
         // BasePtr = builder.CreateShl(BasePtr,8);
+        BasePtr = builder.CreateAnd(BasePtr,0x03FFFFFFFFFFFFFF);
         BasePtr = builder.CreateBitCast(BasePtr, builder.getInt8PtrTy());
         boundInfo.insert(make_pair(BasePtr, Bound));
 printf("aaa434444!\n");
@@ -862,13 +865,14 @@ printf("aaa434444!\n");
             Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
             Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
             Bound = builder.CreateAdd(Bound,Size);
-            Bound = builder.CreateShl(Bound,8);
-            Value *isNull = builder.CreateIsNull(Bound);
+            // Bound = builder.CreateShl(Bound,8);
+            Value *isNull = builder.CreateICmpEQ(Bound,builder.getInt64(0));
             Bound = builder.CreateSelect(isNull, builder.getInt64(0xFFFFFFFFFFFFFFFF),Bound);
             Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
 
             BasePtr = builder.CreateBitCast(BasePtr, builder.getInt64Ty());
-            BasePtr = builder.CreateShl(BasePtr,8);
+            // BasePtr = builder.CreateShl(BasePtr,8);
+            BasePtr = builder.CreateAnd(BasePtr,0x03FFFFFFFFFFFFFF);
             BasePtr = builder.CreateBitCast(BasePtr, builder.getInt8PtrTy());
             boundInfo.insert(make_pair(BasePtr, Bound));
             printf("aaa333!\n");
@@ -1226,8 +1230,8 @@ static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
             //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
             TPtr = builder.CreateCall(BoundsCheck,
                 {builder.getInt32(info), TPtr, Size, BasePtr,Bound});
-            // builder.CreateCall(BoundsCheck,
-            //     {builder.getInt32(info), TPtr, Size, BasePtr});
+            builder.CreateCall(BoundsCheck,
+                {builder.getInt32(info), TPtr, Size, BasePtr});
 
 
             if(LoadInst *Load = dyn_cast<LoadInst>(I)) {
@@ -2465,10 +2469,10 @@ static void addLowFatFuncs(Module *M)
         Value *Bound = &(*(i++));        
 
         Value *IPtr = builder.CreateBitCast(Ptr,builder.getInt64Ty());
-        IPtr = builder.CreateShl(IPtr, 8);
+        IPtr = builder.CreateAnd(IPtr, 0x03FFFFFFFFFFFFFF);
         IPtr = builder.CreateBitCast(IPtr, builder.getInt8PtrTy());
 
-        // Value *RIBasePtr = builder.CreateBitCast(IBasePtr,builder.getInt8PtrTy());
+        // Value *IBasePtr = builder.CreateBitCast(IBasePtr,builder.getInt8PtrTy());
         // Value *RIPtr = builder.CreateBitCast(IPtr,builder.getInt8PtrTy());
 
         Value *Cmp2 = builder.CreateICmpUGE(IPtr,BasePtr);
@@ -2477,9 +2481,9 @@ static void addLowFatFuncs(Module *M)
         Value *Cmp = builder.CreateICmpUGE(TRPtr, Bound);
         Value *RPtr = builder.CreateSelect(Cmp,Bound,TRPtr);
 
-        RPtr = builder.CreateBitCast(RPtr,builder.getInt64Ty());
-        RPtr = builder.CreateLShr(RPtr,8);
-        RPtr = builder.CreateBitCast(RPtr,Ptr->getType());
+        // RPtr = builder.CreateBitCast(RPtr,builder.getInt64Ty());
+        // RPtr = builder.CreateLShr(RPtr,8);
+        // RPtr = builder.CreateBitCast(RPtr,Ptr->getType());
         builder.CreateRet(RPtr);
         
         F->setOnlyReadsMemory();
@@ -2808,6 +2812,27 @@ static bool isInterestingAlloca(Instruction *I)
         return true;
     return false;
 }
+/*
+ * Determine if the given call is "interesting malloc" or not.
+ */
+static bool isInterestingMalloc(Instruction *I)
+{
+    if (option_no_replace_malloc)
+        return false;
+    CallInst *Call = dyn_cast<CallInst>(I);
+    if (Call == nullptr)
+        return false;
+    Function *F = Call->getCalledFunction();
+    if(F == nullptr)
+        return false;
+    const string &Name = F->getName().str();
+    if (Name == "malloc" || Name == "realloc" || Name == "_Znwm" ||
+            Name == "_Znam" || Name == "_ZnwmRKSt9nothrow_t" ||
+            Name == "_ZnamRKSt9nothrow_t" || Name == "calloc" ||
+            Name == "valloc" || Name == "strdup" || Name == "strndup")
+        return true;
+    return false;
+}
 
 /*
  * Determine if the given global variant is "interesting" or not.
@@ -3085,7 +3110,7 @@ static void makeAllocaLowFatPtr(Module *M, Instruction *I)
     else
         Ptr = builder.CreateCall(package, {Ptr, Size});
     Ptr = builder.CreateBitCast(Ptr, Alloca->getType());
-    // AllocedPtr = builder.CreateBitCast(AllocedPtr, Alloca->getType());
+    AllocedPtr = builder.CreateBitCast(AllocedPtr, Alloca->getType());
 
     // Replace all uses of `Alloca' with the (now low-fat) `Ptr'.
     // We do not replace lifetime intrinsics nor values used in the
@@ -3117,29 +3142,68 @@ static void makeAllocaLowFatPtr(Module *M, Instruction *I)
                     lifetimes.push_back(Usr2);
             }
         }
-        // if(dyn_cast<LoadInst>(Usr) || dyn_cast<StoreInst>(Usr))
-        //     ls_replace.push_back(Usr);
-        // else
+        if(dyn_cast<CmpInst>(Usr) || dyn_cast<LoadInst>(Usr) || dyn_cast<StoreInst>(Usr) || dyn_cast<MemSetInst>(Usr) || dyn_cast<MemTransferInst>(Usr))
+            ls_replace.push_back(Usr);
+        else
             replace.push_back(Usr);
     }
     
+    // 带size的指针
     for (User *Usr: replace)
         Usr->replaceUsesOfWith(Alloca, Ptr);
-    // for (User *Usr: ls_replace)
-    //     Usr->replaceUsesOfWith(Alloca, AllocedPtr);
+    // 不带size的指针
+    for (User *Usr: ls_replace)
+        Usr->replaceUsesOfWith(Alloca, AllocedPtr);
 
-    for (User *Usr: lifetimes)
-    {
-        // Lifetimes are deleted.  The alternative is to insert the mirroring
-        // after the lifetime start, however, this proved too difficult to get
-        // working.  One problem is intermediate casts which may be reused.
-        if (auto *Lifetime = dyn_cast<Instruction>(Usr))
-            Lifetime->eraseFromParent();
-    }
+    // for (User *Usr: lifetimes)
+    // {
+    //     // Lifetimes are deleted.  The alternative is to insert the mirroring
+    //     // after the lifetime start, however, this proved too difficult to get
+    //     // working.  One problem is intermediate casts which may be reused.
+    //     if (auto *Lifetime = dyn_cast<Instruction>(Usr))
+    //         Lifetime->eraseFromParent();
+    // }
     if (delAlloca)
         Alloca->eraseFromParent();
 }
+/*
+ * Convert an alloca instruction into a low-fat-pointer.  This is a more
+ * complicated transformation described in the paper:
+ * "Stack Bounds Protection with Low Fat Pointers", in NDSS 2017.
+ */
+ /*
+ * minifat pointer does not need the stack mirror to the heap
+ * but needs align and size as 2^n
+ */
+static void makeMallocMiniFatPtr(Module *M, Instruction *I)
+{
+    CallInst *Call = dyn_cast<CallInst>(I);
+    if (Call == nullptr)
+        return;
 
+    Function *F = I->getParent()->getParent();
+    auto i = nextInsertPoint(F, Call);
+    IRBuilder<> builder(i.first, i.second);
+
+    // 在给每一个用户之前，把他变成minifat-pointer
+    Value *NPtr = builder.CreateBitCast(Call, builder.getInt64Ty());
+    NPtr = builder.CreateAnd(NPtr, 0x03FFFFFFFFFFFFFF);
+    NPtr = builder.CreateBitCast(NPtr, Call->getType());
+
+    // Replace all uses of `malloc' with the (now low-fat) `Ptr'.
+    // We do not replace lifetime intrinsics nor values used in the
+    // construction of the low-fat pointer (NoReplace1, ...).
+    vector<User *> ls_replace;
+    for (User *Usr: Call->users())
+    {
+        if(dyn_cast<CmpInst>(Usr) || dyn_cast<LoadInst>(Usr) || dyn_cast<StoreInst>(Usr) || dyn_cast<MemSetInst>(Usr) || dyn_cast<MemTransferInst>(Usr)/*|| dyn_cast<GetElementPtrInst>(Usr)*/)
+            ls_replace.push_back(Usr);
+    }
+    
+    // 不带size的指针
+    for (User *Usr: ls_replace)
+        Usr->replaceUsesOfWith(Call, NPtr);
+}
 /*
  * Blacklist checking.
  */
@@ -3228,8 +3292,8 @@ static void maskInst(Instruction *I)
         IRBuilder<> builder(Load);
         Value *Ptr =  Load->getOperand(0);
         Load->setVolatile(true);
-        if(find(maskInfo.begin(), maskInfo.end(),Ptr) != maskInfo.end())
-            return;
+        // if(find(maskInfo.begin(), maskInfo.end(),Ptr) != maskInfo.end())
+        //     return;
         Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
         TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
         TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
@@ -3241,8 +3305,8 @@ static void maskInst(Instruction *I)
         IRBuilder<> builder(Store);
         Value *Ptr =  Store->getOperand(1);
         Store->setVolatile(true);
-        if(find(maskInfo.begin(), maskInfo.end(),Ptr) != maskInfo.end())
-            return;
+        // if(find(maskInfo.begin(), maskInfo.end(),Ptr) != maskInfo.end())
+        //     return;
         Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
         TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
         TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
@@ -3278,9 +3342,12 @@ static void maskInst(Instruction *I)
         Value *Ptr =  MI->getOperand(0);
         
         Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
-        if(find(maskInfo.begin(), maskInfo.end(),Ptr) == maskInfo.end())
-            TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
-        TPtr = builder.CreateSub(TPtr, mem_size);
+        if(find(maskInfo.begin(), maskInfo.end(),Ptr) == maskInfo.end()) {
+            TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);     
+        } else {
+            TPtr = builder.CreateSub(TPtr, mem_size);
+        }
+            
         TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
         
         auto OI = MI->op_begin();
@@ -3288,9 +3355,12 @@ static void maskInst(Instruction *I)
 
         Ptr =  MI->getOperand(1);
         TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
-        if(find(maskInfo.begin(), maskInfo.end(),Ptr) == maskInfo.end())
-            TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
-        TPtr = builder.CreateSub(TPtr, mem_size);
+        if(find(maskInfo.begin(), maskInfo.end(),Ptr) == maskInfo.end()) {
+            TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);     
+        } else {
+            TPtr = builder.CreateSub(TPtr, mem_size);
+        }
+
         TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
         OI++;
         *OI = TPtr;
@@ -3303,18 +3373,21 @@ static void maskInst(Instruction *I)
     //     if (Arg1!= NULL && Arg1->getType()->isPointerTy())
     //     {    
     //         Value* TArg1 = builder.CreateBitCast(Arg1, builder.getInt64Ty());
-    //         TArg1 = builder.CreateLShr(TArg1,8);
+    //         // TArg1 = builder.CreateLShr(TArg1,8);
+    //         TArg1 = builder.CreateAnd(TArg1,0x03FFFFFFFFFFFFFF);
     //         TArg1 = builder.CreateBitCast(TArg1, Arg1->getType());
-            
+
     //         *OI = TArg1;
     //     }  
 
     //     if (Arg2!= NULL && Arg2->getType()->isPointerTy())
     //     {
     //         Value* TArg2 = builder.CreateBitCast(Arg2, builder.getInt64Ty());
-    //         TArg2 = builder.CreateLShr(TArg2,8);
+    //         // TArg2 = builder.CreateLShr(TArg2,8);
+    //         TArg2 = builder.CreateAnd(TArg2,0x03FFFFFFFFFFFFFF);
     //         TArg2 = builder.CreateBitCast(TArg2, Arg2->getType());
     //         OI++;
+
     //         *OI = TArg2;
     //     }
         
@@ -3412,7 +3485,41 @@ static void maskInst(Instruction *I)
         }
     }
 }
+static void cmpMaskInst(Instruction *I)
+{
+    if (I->getMetadata("nosanitize") != nullptr)
+        return;
+    // 对任意的指针加 屏蔽size的操作，假设指针是存在较后的这个操作数里的
+    if (CmpInst  *Cmp = dyn_cast<CmpInst >(I)) {
+        Value *Arg1 = Cmp->getOperand(0);
+        Value *Arg2 = Cmp->getOperand(1);
 
+        auto OI = Cmp->op_begin();
+        IRBuilder<> builder(Cmp);
+        if (Arg1!= NULL && Arg1->getType()->isPointerTy())
+        {    
+            Value* TArg1 = builder.CreateBitCast(Arg1, builder.getInt64Ty());
+            // TArg1 = builder.CreateLShr(TArg1,8);
+            TArg1 = builder.CreateAnd(TArg1,0x03FFFFFFFFFFFFFF);
+            TArg1 = builder.CreateBitCast(TArg1, Arg1->getType());
+
+            *OI = TArg1;
+        }  
+
+        if (Arg2!= NULL && Arg2->getType()->isPointerTy())
+        {
+            Value* TArg2 = builder.CreateBitCast(Arg2, builder.getInt64Ty());
+            // TArg2 = builder.CreateLShr(TArg2,8);
+            TArg2 = builder.CreateAnd(TArg2,0x03FFFFFFFFFFFFFF);
+            TArg2 = builder.CreateBitCast(TArg2, Arg2->getType());
+            OI++;
+
+            *OI = TArg2;
+        }
+        
+        
+    }
+}
 
 /*
  * LowFat LLVM Pass
@@ -3447,6 +3554,20 @@ struct LowFat : public ModulePass
         }
         if (isBlacklisted(Blacklist.get(), &M))
             return true;
+
+        //Pass (0): CmpMask所有的指针
+        for (auto &F: M)
+        {
+            if (F.isDeclaration())
+                continue;
+            if (isBlacklisted(Blacklist.get(), &F))
+                continue;
+
+            // STEP #1: Find all instructions that we need to instrument:
+            for (auto &BB: F)
+                for (auto &I: BB)
+                    cmpMaskInst(&I);
+        }
 
         // PASS (1): Bounds instrumentation
         const TargetLibraryInfo &TLI =
@@ -3509,6 +3630,24 @@ struct LowFat : public ModulePass
             for (auto &BB: F)
                 for (auto &I: BB)
                     gvMakeInst(&I);
+        }
+
+        // // Pass (1c) malloc Variable lowfatification
+        for (auto &F: M)
+        {
+            if (F.isDeclaration())
+                continue;
+
+            // STEP #1: Find all interesting mallocs:
+            vector<Instruction *> mallocs;
+            for (auto &BB: F)
+                for (auto &I: BB)
+                    if (isInterestingMalloc(&I))
+                        mallocs.push_back(&I);
+
+            // STEP #2: Mirror all interesting mallocs:
+            for (auto *I: mallocs)
+                makeMallocMiniFatPtr(&M, I);
         }
 
         // PASS (2): Replace unsafe library calls
