@@ -1210,14 +1210,14 @@ static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
         // printf("check_nums %d\n",check_nums);
         if(j == boundInfo.end() && k == sizeInfo.end())
         {
-            // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
-            // builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
-            // builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+            Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
+            builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+            builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
             // // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
             // //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
             // //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
-            // TPtr = builder.CreateCall(BoundsCheck,
-            //     {builder.getInt32(info), TPtr, Size, BasePtr});
+            TPtr = builder.CreateCall(BoundsCheck,
+                {builder.getInt32(info), TPtr, Size, BasePtr});
             // builder.CreateCall(BoundsCheck,
             //     {builder.getInt32(info), TPtr, Size, BasePtr});
         } else /*if (k == sizeInfo.end())*/ {
@@ -1230,11 +1230,15 @@ static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
             //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
             TPtr = builder.CreateCall(BoundsCheck,
                 {builder.getInt32(info), TPtr, Size, BasePtr,Bound});
-            builder.CreateCall(BoundsCheck,
-                {builder.getInt32(info), TPtr, Size, BasePtr});
+            // builder.CreateCall(BoundsCheck,
+            //     {builder.getInt32(info), TPtr, Size, BasePtr});
 
 
-            if(LoadInst *Load = dyn_cast<LoadInst>(I)) {
+            
+        } 
+
+
+        if(LoadInst *Load = dyn_cast<LoadInst>(I)) {
                 auto OI = Load->op_begin();
                 if(OI != Load->op_end() && (*OI)->getType()->getTypeID () == 15){
                     *OI = TPtr;  
@@ -1272,7 +1276,6 @@ static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
                     maskInfo.push_back(TPtr);
                 }
             } 
-        } 
         // else if(j == boundInfo.end()){
         //     Value* TSize = k->second;
         //     Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_size",
@@ -2212,7 +2215,7 @@ static void addLowFatFuncs(Module *M)
         
 
         // 下面是认为全有size的
-        Value *TBasePtr = builder.CreateBitCast(BasePtr, builder.getInt64Ty());
+        Value *TBasePtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
         
         Value* NBasePtr = builder.CreateNot(TBasePtr);
         Value *size_base = builder.CreateAnd(NBasePtr,0xFC00000000000000);
@@ -2299,15 +2302,15 @@ static void addLowFatFuncs(Module *M)
         // // builder5.CreateRetVoid();
 
         Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
-        Value *RealSize = builder.CreateSub(Size,AccessSize);
+        // Value *RealSize = builder.CreateSub(Size,AccessSize);
         // BasePtr = builder.CreateBitCast(BasePtr, builder.getInt8PtrTy());
 
         // // The check is: if (ptr - base > size - sizeof(*ptr)) error();
         Value *IPtr = builder.CreatePtrToInt(Ptr, builder.getInt64Ty());
-        Value *Bound =  builder.CreateBitCast(TBasePtr,builder.getInt64Ty());
-        Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
-        Bound = builder.CreateAdd(Bound,RealSize);
-        Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
+        // Value *Bound =  builder.CreateBitCast(TBasePtr,builder.getInt64Ty());
+        Value *Bound = builder.CreateAnd(TBasePtr,0x03FFFFFFFFFFFFFF);
+        Bound = builder.CreateAdd(Bound,Size);
+        // Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
 
         IBasePtr = builder.CreateAnd(IBasePtr,0x03FFFFFFFFFFFFFF);
         IPtr = builder.CreateAnd(IPtr,0x03FFFFFFFFFFFFFF);
@@ -2315,17 +2318,17 @@ static void addLowFatFuncs(Module *M)
         // Value *RIBasePtr = builder.CreateBitCast(IBasePtr,builder.getInt8PtrTy());
         // Value *RIPtr = builder.CreateBitCast(IPtr,builder.getInt8PtrTy());
 
-        Value *Cmp2 = builder.CreateICmpUGE(IPtr,TBasePtr);
-        Value *TRPtr = builder.CreateSelect(Cmp2,IPtr,TBasePtr);
+        Value *Cmp2 = builder.CreateICmpUGE(IPtr,IBasePtr);
+        Value *TRPtr = builder.CreateSelect(Cmp2,IPtr,IBasePtr);
 
-        Value *Diff = builder.CreateSub(IPtr, IBasePtr);
+        // Value *Diff = builder.CreateSub(IPtr, IBasePtr);
         // Size = builder.CreateSub(Size, AccessSize);
         // Value *Cmp = builder.CreateICmpUGE(Diff, Size);
         Value *Cmp = builder.CreateICmpUGE(TRPtr, Bound);
         // builder5.CreateCondBr(Cmp, Error, Return);
 
         Value *RPtr = builder.CreateSelect(Cmp,Bound,TRPtr);
-
+        RPtr = builder.CreateBitCast(RPtr,builder.getInt8PtrTy());
         
         // Value *Warning = M->getOrInsertFunction("lowfat_oob_test",
         //         builder.getInt8PtrTy(), builder.getInt32Ty(),
@@ -2480,6 +2483,7 @@ static void addLowFatFuncs(Module *M)
 
         Value *Cmp = builder.CreateICmpUGE(TRPtr, Bound);
         Value *RPtr = builder.CreateSelect(Cmp,Bound,TRPtr);
+        RPtr = builder.CreateBitCast(RPtr,builder.getInt8PtrTy());
 
         // RPtr = builder.CreateBitCast(RPtr,builder.getInt64Ty());
         // RPtr = builder.CreateLShr(RPtr,8);
@@ -3292,8 +3296,8 @@ static void maskInst(Instruction *I)
         IRBuilder<> builder(Load);
         Value *Ptr =  Load->getOperand(0);
         Load->setVolatile(true);
-        // if(find(maskInfo.begin(), maskInfo.end(),Ptr) != maskInfo.end())
-        //     return;
+        if(find(maskInfo.begin(), maskInfo.end(),Ptr) != maskInfo.end())
+            return;
         Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
         TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
         TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
@@ -3305,8 +3309,8 @@ static void maskInst(Instruction *I)
         IRBuilder<> builder(Store);
         Value *Ptr =  Store->getOperand(1);
         Store->setVolatile(true);
-        // if(find(maskInfo.begin(), maskInfo.end(),Ptr) != maskInfo.end())
-        //     return;
+        if(find(maskInfo.begin(), maskInfo.end(),Ptr) != maskInfo.end())
+            return;
         Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
         TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
         TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
