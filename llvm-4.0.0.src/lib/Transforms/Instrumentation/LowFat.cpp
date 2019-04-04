@@ -3296,8 +3296,8 @@ static void maskInst(Instruction *I)
         IRBuilder<> builder(Load);
         Value *Ptr =  Load->getOperand(0);
         Load->setVolatile(true);
-        if(find(maskInfo.begin(), maskInfo.end(),Ptr) != maskInfo.end())
-            return;
+        // if(find(maskInfo.begin(), maskInfo.end(),Ptr) != maskInfo.end())
+        //     return;
         Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
         TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
         TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
