@@ -655,8 +655,8 @@ static Value *calcBasePtr(Function *F, Value *Ptr)
     Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
     Bound = builder.CreateAdd(Bound,Size);
     // Bound = builder.CreateShl(Bound,8);
-    Value *isNull = builder.CreateICmpEQ(Bound,builder.getInt64(0));
-    Bound = builder.CreateSelect(isNull, builder.getInt64(0xFFFFFFFFFFFFFFFF),Bound);
+    // Value *isNull = builder.CreateICmpEQ(Bound,builder.getInt64(0));
+    // Bound = builder.CreateSelect(isNull, builder.getInt64(0xFFFFFFFFFFFFFFFF),Bound);
     Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
     BasePtr = builder.CreateBitCast(BasePtr, builder.getInt64Ty());
     // BasePtr = builder.CreateShl(BasePtr,8);
@@ -793,8 +793,8 @@ static Value *calcBasePtr(const TargetLibraryInfo *TLI, Function *F,
             Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
             Bound = builder.CreateAdd(Bound,Size);
             // Bound = builder.CreateShl(Bound,8);
-            Value *isNull = builder.CreateICmpEQ(Bound,builder.getInt64(0));
-            Bound = builder.CreateSelect(isNull, builder.getInt64(0xFFFFFFFFFFFFFFFF),Bound);
+            // Value *isNull = builder.CreateICmpEQ(Bound,builder.getInt64(0));
+            // Bound = builder.CreateSelect(isNull, builder.getInt64(0xFFFFFFFFFFFFFFFF),Bound);
             Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
 
             BasePtr = builder.CreateBitCast(BasePtr, builder.getInt64Ty());
@@ -828,8 +828,8 @@ printf("aaa5555!\n");
         Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
         Bound = builder.CreateAdd(Bound,Size);
         // Bound = builder.CreateShl(Bound,8);
-        Value *isNull = builder.CreateICmpEQ(Bound,builder.getInt64(0));
-        Bound = builder.CreateSelect(isNull, builder.getInt64(0xFFFFFFFFFFFFFFFF),Bound);
+        // Value *isNull = builder.CreateICmpEQ(Bound,builder.getInt64(0));
+        // Bound = builder.CreateSelect(isNull, builder.getInt64(0xFFFFFFFFFFFFFFFF),Bound);
         Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
 
         BasePtr = builder.CreateBitCast(BasePtr, builder.getInt64Ty());
@@ -866,8 +866,8 @@ printf("aaa434444!\n");
             Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
             Bound = builder.CreateAdd(Bound,Size);
             // Bound = builder.CreateShl(Bound,8);
-            Value *isNull = builder.CreateICmpEQ(Bound,builder.getInt64(0));
-            Bound = builder.CreateSelect(isNull, builder.getInt64(0xFFFFFFFFFFFFFFFF),Bound);
+            // Value *isNull = builder.CreateICmpEQ(Bound,builder.getInt64(0));
+            // Bound = builder.CreateSelect(isNull, builder.getInt64(0xFFFFFFFFFFFFFFFF),Bound);
             Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
 
             BasePtr = builder.CreateBitCast(BasePtr, builder.getInt64Ty());
@@ -1241,6 +1241,8 @@ static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
         if(LoadInst *Load = dyn_cast<LoadInst>(I)) {
                 auto OI = Load->op_begin();
                 if(OI != Load->op_end() && (*OI)->getType()->getTypeID () == 15){
+                    if(TPtr->getType() != Ptr->getType())
+                        TPtr = builder.CreateBitCast(TPtr,Ptr->getType());
                     *OI = TPtr;  
                     maskInfo.push_back(TPtr);
                 }
@@ -1249,6 +1251,8 @@ static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
                     auto OI = Store->op_begin();
                     OI++;
                     if(OI != Store->op_end() && (*OI)->getType()->getTypeID () == 15) {
+                        if(TPtr->getType() != Ptr->getType())
+                            TPtr = builder.CreateBitCast(TPtr,Ptr->getType());
                         *OI = TPtr;     
                         maskInfo.push_back(TPtr);
                     }
@@ -1267,11 +1271,15 @@ static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
             } else if (MemTransferInst *MI = dyn_cast<MemTransferInst>(I)) {
                 if(info == LOWFAT_OOB_ERROR_MEMCPY_ONE) {
                     auto OI = MI->op_begin();
+                    if(TPtr->getType() != Ptr->getType())
+                        TPtr = builder.CreateBitCast(TPtr,Ptr->getType());
                     *OI = TPtr;
                     maskInfo.push_back(TPtr);
                 } else if(info == LOWFAT_OOB_ERROR_MEMCPY_TWO) {
                     auto OI = MI->op_begin();
                     OI++;
+                    if(TPtr->getType() != Ptr->getType())
+                        TPtr = builder.CreateBitCast(TPtr,Ptr->getType());
                     *OI = TPtr;
                     maskInfo.push_back(TPtr);
                 }
@@ -2483,7 +2491,7 @@ static void addLowFatFuncs(Module *M)
 
         Value *Cmp = builder.CreateICmpUGE(TRPtr, Bound);
         Value *RPtr = builder.CreateSelect(Cmp,Bound,TRPtr);
-        RPtr = builder.CreateBitCast(RPtr,builder.getInt8PtrTy());
+        // RPtr = builder.CreateBitCast(RPtr,builder.getInt8PtrTy());
 
         // RPtr = builder.CreateBitCast(RPtr,builder.getInt64Ty());
         // RPtr = builder.CreateLShr(RPtr,8);
@@ -3296,8 +3304,8 @@ static void maskInst(Instruction *I)
         IRBuilder<> builder(Load);
         Value *Ptr =  Load->getOperand(0);
         Load->setVolatile(true);
-        // if(find(maskInfo.begin(), maskInfo.end(),Ptr) != maskInfo.end())
-        //     return;
+        if(find(maskInfo.begin(), maskInfo.end(),Ptr) != maskInfo.end())
+            return;
         Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
         TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
         TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
