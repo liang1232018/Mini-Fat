@@ -1246,18 +1246,47 @@ static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
         // printf("check_nums %d\n",check_nums);
         if(j == boundInfo.end() && k == sizeInfo.end())
         {
-            Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
-            builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
-            builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
-            // // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
-            // //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
-            // //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
-            TPtr = builder.CreateCall(BoundsCheck,
-                {builder.getInt32(info), TPtr, Size, BasePtr});
-            // builder.CreateCall(BoundsCheck,
-            //     {builder.getInt32(info), TPtr, Size, BasePtr});
+            if(addflag) {
+                printf("old\n");
+                Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_add",
+                builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+                builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+                // // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
+                // //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+                // //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+                TPtr = builder.CreateCall(BoundsCheck,
+                    {builder.getInt32(info), TPtr, Size, BasePtr});
+                // builder.CreateCall(BoundsCheck,
+                //     {builder.getInt32(info), TPtr, Size, BasePtr});
+
+            } else if(subflag) {
+                Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_sub",
+                builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+                builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+                // // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
+                // //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+                // //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+                TPtr = builder.CreateCall(BoundsCheck,
+                    {builder.getInt32(info), TPtr, Size, BasePtr});
+                // builder.CreateCall(BoundsCheck,
+                //     {builder.getInt32(info), TPtr, Size, BasePtr});
+
+            } else {
+                Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
+                builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+                builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+                // // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
+                // //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+                // //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+                TPtr = builder.CreateCall(BoundsCheck,
+                    {builder.getInt32(info), TPtr, Size, BasePtr});
+                // builder.CreateCall(BoundsCheck,
+                //     {builder.getInt32(info), TPtr, Size, BasePtr});
+            }
+            
         } else /*if (k == sizeInfo.end())*/ {
             if(addflag) {
+                printf("new\n");
                 Value* Bound = j->second;
                 Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_bound_new_add",
                 builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
@@ -2461,6 +2490,102 @@ static void addLowFatFuncs(Module *M)
         F->setLinkage(GlobalValue::InternalLinkage);
         F->addFnAttr(llvm::Attribute::AlwaysInline);
     }
+    F = M->getFunction("lowfat_oob_check_add");
+    if (F != nullptr)
+    {
+        BasicBlock *Entry  = BasicBlock::Create(M->getContext(), "", F);
+
+
+        IRBuilder<> builder(Entry);
+        auto i = F->getArgumentList().begin();
+        Value *Info = &(*(i++));
+        Value *Ptr = &(*(i++));
+        Value *AccessSize = &(*(i++));
+        Value *BasePtr = &(*(i++));
+
+
+        Value *IBasePtr = builder.CreatePtrToInt(BasePtr,
+            builder.getInt64Ty());
+
+        
+
+        // 下面是认为全有size的
+        Value *TBasePtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
+        
+        Value* NBasePtr = builder.CreateNot(TBasePtr);
+        Value *size_base = builder.CreateAnd(NBasePtr,0xFC00000000000000);
+        size_base = builder.CreateLShr(size_base,58);
+
+
+        Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
+        Value *IPtr = builder.CreatePtrToInt(Ptr, builder.getInt64Ty());
+        Value *Bound = builder.CreateAnd(TBasePtr,0x03FFFFFFFFFFFFFF);
+        Bound = builder.CreateAdd(Bound,Size);
+
+        IBasePtr = builder.CreateAnd(IBasePtr,0x03FFFFFFFFFFFFFF);
+        IPtr = builder.CreateAnd(IPtr,0x03FFFFFFFFFFFFFF);
+
+
+        Value *Cmp = builder.CreateICmpUGE(IPtr, Bound);
+        Value *RPtr = builder.CreateSelect(Cmp,Bound,IPtr);
+        RPtr = builder.CreateBitCast(RPtr,builder.getInt8PtrTy());
+        
+
+        builder.CreateRet(RPtr);
+
+        F->setOnlyReadsMemory();
+        F->setDoesNotThrow();
+        F->setLinkage(GlobalValue::InternalLinkage);
+        F->addFnAttr(llvm::Attribute::AlwaysInline);
+    }
+    F = M->getFunction("lowfat_oob_check_sub");
+    if (F != nullptr)
+    {
+        BasicBlock *Entry  = BasicBlock::Create(M->getContext(), "", F);
+
+
+        IRBuilder<> builder(Entry);
+        auto i = F->getArgumentList().begin();
+        Value *Info = &(*(i++));
+        Value *Ptr = &(*(i++));
+        Value *AccessSize = &(*(i++));
+        Value *BasePtr = &(*(i++));
+
+
+        Value *IBasePtr = builder.CreatePtrToInt(BasePtr,
+            builder.getInt64Ty());
+
+        
+
+        // 下面是认为全有size的
+        Value *TBasePtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
+        
+        Value* NBasePtr = builder.CreateNot(TBasePtr);
+        Value *size_base = builder.CreateAnd(NBasePtr,0xFC00000000000000);
+        size_base = builder.CreateLShr(size_base,58);
+
+
+        Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
+        Value *IPtr = builder.CreatePtrToInt(Ptr, builder.getInt64Ty());
+        Value *Bound = builder.CreateAnd(TBasePtr,0x03FFFFFFFFFFFFFF);
+        Bound = builder.CreateAdd(Bound,Size);
+
+        IBasePtr = builder.CreateAnd(IBasePtr,0x03FFFFFFFFFFFFFF);
+        IPtr = builder.CreateAnd(IPtr,0x03FFFFFFFFFFFFFF);
+
+
+        Value *Cmp2 = builder.CreateICmpUGE(IPtr,IBasePtr);
+        Value *TRPtr = builder.CreateSelect(Cmp2,IPtr,IBasePtr);
+        TRPtr = builder.CreateBitCast(TRPtr,builder.getInt8PtrTy());
+        
+
+        builder.CreateRet(TRPtr);
+
+        F->setOnlyReadsMemory();
+        F->setDoesNotThrow();
+        F->setLinkage(GlobalValue::InternalLinkage);
+        F->addFnAttr(llvm::Attribute::AlwaysInline);
+    }
     F = M->getFunction("lowfat_oob_check_bound");
     if (F != nullptr)
     {
@@ -3602,7 +3727,8 @@ static void maskInst(Instruction *I)
                 *(OI+i) = TArg;
                 
             }
-        } else if (F != nullptr && (F->getName() == "llvm.va_start" || F->getName() == "llvm.va_end") ) {
+        } else if (F != nullptr && (F->getName() == "llvm.va_start" || F->getName() == "llvm.va_end"  || F->getName() == "PerlIO_printf" || F->getName() == "PerlIO_stdoutf" 
+                    || F->getName() == "PerlIO_sprintf" || F->getName() == "PerlIO_debug") ) {
             IRBuilder<> builder(Call);
             auto OI = Call->op_begin();
             for (unsigned i = 0; i < Call->getNumArgOperands(); i++)
@@ -3752,7 +3878,7 @@ struct LowFat : public ModulePass
                     baseInfo);
         }
 
-        // // PASS (1a) Stack object lowfatification
+        // PASS (1a) Stack object lowfatification
         for (auto &F: M)
         {
             if (F.isDeclaration())
