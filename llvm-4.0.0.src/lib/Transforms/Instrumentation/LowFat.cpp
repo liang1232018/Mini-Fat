@@ -2405,10 +2405,10 @@ static void addLowFatFuncs(Module *M)
         // // The check is: if (ptr - base > size - sizeof(*ptr)) error();
         Value *IPtr = builder.CreatePtrToInt(Ptr, builder.getInt64Ty());
         // Value *Bound =  builder.CreateBitCast(TBasePtr,builder.getInt64Ty());
-        Value *Bound = builder.CreateAnd(TBasePtr,0x03FFFFFFFFFFFFFF);
+        Value *Bound = builder.CreateAnd(IBasePtr,0x03FFFFFFFFFFFFFF);
         Bound = builder.CreateAdd(Bound,Size);
         // Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
-
+        
         IBasePtr = builder.CreateAnd(IBasePtr,0x03FFFFFFFFFFFFFF);
         IPtr = builder.CreateAnd(IPtr,0x03FFFFFFFFFFFFFF);
 
@@ -2519,16 +2519,15 @@ static void addLowFatFuncs(Module *M)
 
         Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
         Value *IPtr = builder.CreatePtrToInt(Ptr, builder.getInt64Ty());
-        Value *Bound = builder.CreateAnd(TBasePtr,0x03FFFFFFFFFFFFFF);
+        Value *Bound = builder.CreateAnd(IBasePtr,0x03FFFFFFFFFFFFFF);
         Bound = builder.CreateAdd(Bound,Size);
 
-        IBasePtr = builder.CreateAnd(IBasePtr,0x03FFFFFFFFFFFFFF);
         IPtr = builder.CreateAnd(IPtr,0x03FFFFFFFFFFFFFF);
 
 
         Value *Cmp = builder.CreateICmpUGE(IPtr, Bound);
         Value *RPtr = builder.CreateSelect(Cmp,Bound,IPtr);
-        RPtr = builder.CreateBitCast(RPtr,builder.getInt8PtrTy());
+        RPtr = builder.CreateIntToPtr(RPtr,builder.getInt8PtrTy());
         
 
         builder.CreateRet(RPtr);
@@ -2554,21 +2553,7 @@ static void addLowFatFuncs(Module *M)
 
         Value *IBasePtr = builder.CreatePtrToInt(BasePtr,
             builder.getInt64Ty());
-
-        
-
-        // 下面是认为全有size的
-        Value *TBasePtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
-        
-        Value* NBasePtr = builder.CreateNot(TBasePtr);
-        Value *size_base = builder.CreateAnd(NBasePtr,0xFC00000000000000);
-        size_base = builder.CreateLShr(size_base,58);
-
-
-        Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
         Value *IPtr = builder.CreatePtrToInt(Ptr, builder.getInt64Ty());
-        Value *Bound = builder.CreateAnd(TBasePtr,0x03FFFFFFFFFFFFFF);
-        Bound = builder.CreateAdd(Bound,Size);
 
         IBasePtr = builder.CreateAnd(IBasePtr,0x03FFFFFFFFFFFFFF);
         IPtr = builder.CreateAnd(IPtr,0x03FFFFFFFFFFFFFF);
