@@ -65,7 +65,31 @@ extern "C" {
 #define UPBNDMASK  (~((1ULL << PTRSIZEBITS) - 1ULL))
 #define MAXPTRVAL PTRVALMASK
 
-#define INLINEATTR __attribute__((always_inline))
+#define INLINEATTR //__attribute__((always_inline))
+
+typedef int errno_t;
+typedef uint64_t rsize_t;
+
+extern errno_t memcpy_s (void *dest, rsize_t dmax, const void *src, rsize_t smax);
+extern errno_t memmove_s (void *dest, rsize_t dmax, const void *src, rsize_t smax);
+extern errno_t memset_s (void *dest, rsize_t len, uint8_t value);
+extern errno_t memzero_s (void *dest, rsize_t len);
+extern errno_t memcmp_s (const void *dest, rsize_t dmax, const void *src,  rsize_t smax, int *diff);
+extern char *stpcpy_s(char *dest, rsize_t dmax, const char *src, errno_t *err);
+extern char *stpncpy_s(char *dest, rsize_t dmax, const char *src, rsize_t smax, errno_t *err);
+extern errno_t strcasecmp_s (const char *dest, rsize_t dmax, const char *src, int *indicator);
+extern errno_t strcasestr_s (char *dest, rsize_t dmax, const char *src, rsize_t slen, char **substring);
+extern errno_t strcat_s (char *dest, rsize_t dmax, const char *src);
+extern errno_t strcmp_s (const char *dest, rsize_t dmax, const char *src, int *indicator);
+extern errno_t strcpy_s (char *dest, rsize_t dmax, const char *src);
+extern errno_t strcspn_s (const char *dest, rsize_t dmax, const char *src,  rsize_t slen, rsize_t *count);
+extern rsize_t strnlen_s (const char *dest, rsize_t dmax);
+extern errno_t strncat_s (char *dest, rsize_t dmax, const char *src, rsize_t slen);
+extern errno_t strncpy_s (char *dest, rsize_t dmax, const char *src, rsize_t slen);
+extern errno_t strpbrk_s (char *dest, rsize_t dmax, char *src,  rsize_t slen, char **first);
+extern errno_t strspn_s (const char *dest, rsize_t dmax, const char *src,  rsize_t slen, rsize_t *count);
+extern errno_t strstr_s (char *dest, rsize_t dmax, const char *src, rsize_t slen, char **substring);
+extern char* strtok_s(char *dest, uint64_t *dmax, const char *src, char **ptr);
 
 /* ------------------------------------------------------------------------- */
 /* ------------------ Run-time macros to change behaviour ------------------ */
@@ -300,11 +324,14 @@ void *minifat_mempcpy(void *dest, const void *src, size_t n);
 void *minifat_memrchr(const void *m, int c, size_t n);
 
 INLINEATTR void *minifat_memcpy(void *__restrict__ dest, const void *__restrict__ src, size_t n) {
+    PTRTYPE __ssize = __minifat_extract_size(src);
+    PTRTYPE __dsize = __minifat_extract_size(dest);
     void* ret = dest;
     size_t oldn = n;
     if (dest) dest = __minifat_uninstrument_check(dest, &n);
     if (src)  src  = __minifat_uninstrument_check(src, &n);
-    memcpy(dest, src, n);
+    errno_t err = memcpy_s(dest, __dsize, src, n);
+    //memcpy(dest, src, n);
 #ifdef minifat_ZERO_ON_ERROR
     if (oldn > n) {
         PTRTYPE ubnd = __minifat_extract_ubnd(ret);
@@ -316,11 +343,13 @@ INLINEATTR void *minifat_memcpy(void *__restrict__ dest, const void *__restrict_
 }
 
 void *minifat_memmove(void *dest, const void *src, size_t n) {
+    PTRTYPE __dsize = __minifat_extract_size(dest);
     void* ret = dest;
     size_t oldn = n;
     if (dest) dest = __minifat_uninstrument_check(dest, &n);
     if (src)  src  = __minifat_uninstrument_check(src, &n);
-    memmove(dest, src, n);
+    memmove_s(dest, __dsize, src, n);
+    //memmove(dest, src, n);
 #ifdef minifat_ZERO_ON_ERROR
     if (oldn > n) {
         PTRTYPE ubnd = __minifat_extract_ubnd(ret);
@@ -332,31 +361,43 @@ void *minifat_memmove(void *dest, const void *src, size_t n) {
 }
 
 void *minifat_memset(void *dest, int c, size_t n) {
+    PTRTYPE __size = __minifat_extract_size(dest);
     void* ret = dest;
     size_t oldn = n;
     if (dest) dest = __minifat_uninstrument_check(dest, &n);
-    memset(dest, c, n);
+    //if(__size < n) n = __size; 
+    memset_s(dest, n, c);
+    //memset(dest, c, n);
     return ret;
 }
 
 void minifat_bzero(void *s, size_t n) {
     size_t oldn = n;
     if (s)  s = __minifat_uninstrument_check(s, &n);
-    bzero(s, n);
+    memzero_s(s, n);
+    //bzero(s, n);
 }
 
 int minifat_bcmp(const void *s1, const void *s2, size_t n) {
+    PTRTYPE __ssize1 = __minifat_extract_size(s1);
+    PTRTYPE __ssize2 = __minifat_extract_size(s2);
     if (s1)  s1 = __minifat_uninstrument_check(s1, &n);
     if (s2)  s2 = __minifat_uninstrument_check(s2, &n);
-    return bcmp(s1, s2, n);
+    int diff;
+    errno_t err = memcmp_s(s1,__ssize1,s2,__ssize2,&diff);
+    return diff;
+    //return bcmp(s1, s2, n);
 }
 
 void minifat_bcopy(const void *s1, void *s2, size_t n) {
+    PTRTYPE __ssize1 = __minifat_extract_size(s1);
+    PTRTYPE __ssize2 = __minifat_extract_size(s2);
     void* olds2 = s2;
     size_t oldn = n;
     if (s1)  s1 = __minifat_uninstrument_check(s1, &n);
     if (s2)  s2 = __minifat_uninstrument_check(s2, &n);
-    bcopy(s1, s2, n);
+    memmove_s(s2,__ssize2,s1,n);
+    //bcopy(s1, s2, n);
 #ifdef minifat_ZERO_ON_ERROR
     if (oldn > n)  minifat_bzero(s2, __minifat_extract_ubnd(olds2));
 #endif
@@ -391,9 +432,14 @@ void *minifat_memchr(const void *src, int c, size_t n) {
 }
 
 int minifat_memcmp(const void *vl, const void *vr, size_t n) {
+    PTRTYPE __vlsize = __minifat_extract_size(vl);
+    PTRTYPE __vrsize = __minifat_extract_size(vr);
     if (vl)  vl  = __minifat_uninstrument_check(vl, &n);
     if (vr)  vr  = __minifat_uninstrument_check(vr, &n);
-    return memcmp(vl, vr, n);
+    int diff;
+    errno_t err = memcmp_s(vl,__vlsize,vr,__vrsize,&diff);
+    return diff;
+    //return memcmp(vl, vr, n);
 }
 
 void *minifat_memmem(const void *h0, size_t k, const void *n0, size_t l) {
@@ -505,7 +551,9 @@ char *minifat_rindex(const char *s, int c) {
 char *minifat_stpcpy(char *__restrict__ d, const char *__restrict__ s) {
     char* dval = __minifat_uninstrument(d);
     char* sval  = __minifat_uninstrument(s);
-    char* ptr = stpcpy(dval, sval);
+    errno_t err;
+    char* ptr = stpcpy_s(dval,__minifat_extract_size(d), sval, &err);
+    //char* ptr = stpcpy(dval, sval);
     // ptr points into d, so it has the same bounds as d
     PTRTYPE ubnd = __minifat_extract_ubnd(d);
     return __minifat_combine_ptr(ptr, ubnd);
@@ -514,35 +562,54 @@ char *minifat_stpcpy(char *__restrict__ d, const char *__restrict__ s) {
 char *minifat_stpncpy(char *__restrict__ d, const char *__restrict__ s, size_t n) {
     char* dval = __minifat_uninstrument(d);
     char* sval  = __minifat_uninstrument(s);
-    char* ptr = stpncpy(dval, sval, n);
+    errno_t err;
+    char* ptr = stpncpy_s(dval,__minifat_extract_size(dval), sval, n, &err);
+    //char* ptr = stpncpy(dval, sval, n);
     // ptr points into d, so it has the same bounds as d
     PTRTYPE ubnd = __minifat_extract_ubnd(d);
     return __minifat_combine_ptr(ptr, ubnd);
 }
 
 int minifat_strcasecmp(const char *l, const char *r) {
+    PTRTYPE __lsize = __minifat_extract_size(l);
     l = __minifat_uninstrument(l);
     r = __minifat_uninstrument(r);
-    return strcasecmp(l, r);
+    int indicator;
+    strcasecmp_s(l, __lsize ,r, &indicator);
+    return indicator;
+    //return strcasecmp(l, r);
 }
 
 char *minifat_strcasestr(const char *h, const char *n) {
+    PTRTYPE dsize = __minifat_extract_size(h);
+    PTRTYPE ssize = __minifat_extract_size(n);
     char* hval = __minifat_uninstrument(h);
     char* nval = __minifat_uninstrument(n);
-    char* ptr = strcasestr(hval, nval);
+    char *substring;
+    errno_t err = strcasestr_s(hval, dsize, nval, ssize , &substring);
+    if (*substring) {
+        // ptr points into h, so it has the same bounds as h
+        PTRTYPE ubnd = __minifat_extract_ubnd(h);
+        substring = __minifat_combine_ptr(substring, ubnd);
+    }  
+    return substring;
+    /*char* ptr = strcasestr(hval, nval);
     if (ptr) {
         // ptr points into h, so it has the same bounds as h
         PTRTYPE ubnd = __minifat_extract_ubnd(h);
         ptr = __minifat_combine_ptr(ptr, ubnd);
     }
-    return ptr;
+    return ptr;*/
 }
 
 char *minifat_strcat(char *__restrict__ dest, const char *__restrict__ src) {
     char* destval = __minifat_uninstrument(dest);
     char* srcval  = __minifat_uninstrument(src);
-    strcat(destval, srcval);
-    return dest;
+    //strcat(destval, srcval);
+    //return dest;
+    strcat_s(destval, __minifat_extract_size(dest), srcval);
+    PTRTYPE ubnd = __minifat_extract_ubnd(dest);
+    return __minifat_combine_ptr(destval, ubnd);
 }
 
 char *minifat_strchr(const char *s, int c) {
@@ -565,22 +632,50 @@ char *minifat_strchrnul(const char *s, int c) {
 }
 
 int minifat_strcmp(const char *l, const char *r) {
+    //printf("l = %p\n",l);
+    //printf("r = %p\n",r);
+    PTRTYPE __lsize =  __minifat_extract_size(l);
+    PTRTYPE __rsize =  __minifat_extract_size(r);
+    //printf("lsize = %llu\n",__lsize);
+    //printf("rsize = %llu\n",__rsize);
     l = __minifat_uninstrument(l);
     r = __minifat_uninstrument(r);
-    return strcmp(l, r);
+    //printf("l = %p\n",l);
+    //printf("r = %p\n",r);
+    if(__lsize && __rsize){
+        int indicator;
+        errno_t err = strcmp_s(l, __lsize, r, &indicator);
+        return indicator;
+    }
+    return strcmp(l,r);
+    //return strcmp(l, r);
 }
 
 INLINEATTR char *minifat_strcpy(char *__restrict__ dest, const char *__restrict__ src) {
+    PTRTYPE __dsize = __minifat_extract_size(dest);
+    PTRTYPE __ssize = __minifat_extract_size(src);
     char* destval = __minifat_uninstrument(dest);
     char* srcval  = __minifat_uninstrument(src);
-    strcpy(destval, srcval);
-    return dest;
+    if(__dsize  && __ssize ){
+        errno_t err = strcpy_s(destval, __minifat_extract_size(dest) , srcval);
+    }
+    else{
+        strcpy(destval, srcval);
+    }
+    return destval;
+    //strcpy(destval, srcval);
+    //return dest;
 }
 
 size_t minifat_strcspn(const char *s, const char *c) {
+    PTRTYPE __ssize = __minifat_extract_size(s);
+    PTRTYPE __csize = __minifat_extract_size(c);
     s = __minifat_uninstrument(s);
     c = __minifat_uninstrument(c);
-    return strcspn(s, c);
+    size_t count;
+    strcspn_s(s, __ssize, c, __csize, &count);
+    return count;
+    //return strcspn(s, c);
 }
 
 void* __minifat_memdup(const void *s, size_t size) {
@@ -592,7 +687,7 @@ void* __minifat_memdup(const void *s, size_t size) {
 }
 
 char* __minifat_strdup(const char *s) {
-    size_t size = strlen(s) + 1;           // +1 for null terminator
+    size_t size = strlen(s) + 1;           // +1 for null terminator   
     return __minifat_memdup(s, size);
 }
 
@@ -600,7 +695,6 @@ char *minifat_strdup(const char *s) {
     s = __minifat_uninstrument(s);
     return __minifat_strdup(s);
 }
-
 char *minifat_strerror(int errnum) {
     static struct charbuf buf = {.lbnd = 0};
     if (buf.lbnd == 0)  buf.lbnd = (PTRTYPE)&buf;
@@ -633,8 +727,13 @@ int __xpg_strerror_r(int err, char *buf, size_t buflen) {
 // }
 
 size_t minifat_strlen(const char *s) {
+    //printf("before s = %p\n",s);
+    PTRTYPE __size = __minifat_extract_size(s);
     s = __minifat_uninstrument(s);
-    return strlen(s);
+    //printf("after s = %p\n",s);
+    //printf("__size = %llu\n", __size);
+    return  __size?strnlen_s(s, __size):strlen(s);
+    //return strlen(s);
 }
 
 // weak_alias(strlen, __sgxbound_strlen);
@@ -642,32 +741,54 @@ size_t minifat_strlen(const char *s) {
 int minifat_strncasecmp(const char *l, const char *r, size_t n) {
     l = __minifat_uninstrument(l);
     r = __minifat_uninstrument(r);
-    return strncasecmp(l, r, n);
+    int indicator;
+    errno_t err = strcasecmp_s(l, n, r, &indicator);
+    return  indicator;
 }
 
 char *minifat_strncat(char *__restrict__ d, const char *__restrict__ s, size_t n) {
+    PTRTYPE __dsize = __minifat_extract_size(d);
     char* dval = __minifat_uninstrument(d);
     char* sval  = __minifat_uninstrument(s);
-    strncat(dval, sval, n);
-    return d;
+    errno_t err = strncat_s(dval, __dsize, sval, n);
+    PTRTYPE ubnd = __minifat_extract_ubnd(d);
+    return __minifat_combine_ptr(dval, ubnd);
+    //strncat(dval, sval, n);
+    //return d;
 }
 
 int minifat_strncmp(const char *l, const char *r, size_t n) {
+    PTRTYPE __lsize =  __minifat_extract_size(l);
+    PTRTYPE __rsize =  __minifat_extract_size(r);
     l = __minifat_uninstrument(l);
     r = __minifat_uninstrument(r);
+    if(__lsize && __rsize){
+        int indicator;
+        strcmp_s(l, n, r, &indicator);    
+        return indicator;
+    }
     return strncmp(l, r, n);
 }
 
 char *minifat_strncpy(char *__restrict__ d, const char *__restrict__ s, size_t n) {
     char* dval = __minifat_uninstrument(d);
     char* sval  = __minifat_uninstrument(s);
-    strncpy(dval, sval, n);
-    return d;
+    PTRTYPE __size = __minifat_extract_size(d);
+    if(!__size) {
+        strncpy(dval, sval, n);
+    }
+    else{
+        errno_t err = strncpy_s(dval,__size, sval, n);
+    }
+    PTRTYPE ubnd = __minifat_extract_ubnd(d);
+    return __minifat_combine_ptr(dval, ubnd);
+    //strncpy(dval, sval, n);
+    //return d;
 }
 
 char *minifat_strndup(const char *s, size_t n) {
     s = __minifat_uninstrument(s);
-    size_t l = strnlen(s, n);
+    size_t l = strnlen_s(s, n);
     char *d = malloc(l + 1 + PTRSIZE); // +1 for null terminator
     if (!d) return NULL;
     memcpy(d, s, l);
@@ -678,19 +799,23 @@ char *minifat_strndup(const char *s, size_t n) {
 
 size_t minifat_strnlen(const char *s, size_t n) {
     s = __minifat_uninstrument(s);
-    return strnlen(s, n);
+     return strnlen_s(s, n);
 }
 
 char *minifat_strpbrk(const char *s, const char *b) {
     char* sval = __minifat_uninstrument(s);
     char* bval = __minifat_uninstrument(b);
-    char* ptr = strpbrk(sval, bval);
-    if (ptr) {
+    
+    PTRTYPE ssize = __minifat_extract_size(s);
+    PTRTYPE bsize = __minifat_extract_size(b);
+    char *first;
+    errno_t err = strpbrk_s(sval,ssize,bval,bsize, &first);
+    if (first) {
         // ptr points into s, so it has the same bounds as s
         PTRTYPE ubnd = __minifat_extract_ubnd(s);
-        ptr = __minifat_combine_ptr(ptr, ubnd);
+        first = __minifat_combine_ptr(first, ubnd);
     }
-    return ptr;
+    return first;
 }
 
 char *minifat_strrchr(const char *s, int c) {
@@ -729,25 +854,34 @@ char *minifat_strsignal(int signum) {
 }
 
 size_t minifat_strspn(const char *s, const char *c) {
+    PTRTYPE __ssize = __minifat_extract_size(s);
+    PTRTYPE __csize = __minifat_extract_size(c);
     s = __minifat_uninstrument(s);
     c = __minifat_uninstrument(c);
-    return strspn(s, c);
+    int count;
+    strspn_s(s, __ssize,c,__csize,&count);
+    return count;
 }
 
 char *minifat_strstr(const char *h, const char *n) {
     char* hval = __minifat_uninstrument(h);
     char* nval = __minifat_uninstrument(n);
-    char* ptr = strstr(hval, nval);
-    if (ptr) {
+    PTRTYPE hsize = __minifat_extract_size(h);
+    PTRTYPE nsize = __minifat_extract_size(n);
+    char *substring;
+    errno_t err = strstr_s(h, hsize, n, nsize , &substring);
+    if (substring) {
         // ptr points into h, so it has the same bounds as h
         PTRTYPE ubnd = __minifat_extract_ubnd(h);
-        ptr = __minifat_combine_ptr(ptr, ubnd);
+        substring = __minifat_combine_ptr(substring, ubnd);
     }
-    return ptr;
+    return substring;
 }
 
 char *minifat_strtok(char *__restrict__ s, const char *__restrict__ sep) {
-    static PTRTYPE curr_ubnd = 0;
+    static char* olds;
+    return minifat_strtok_r(s,sep,&olds);
+    /*static PTRTYPE curr_ubnd = 0;
     char* sval = NULL;
     if (s) {
         // first invocation, memorize ubnd of s
@@ -761,11 +895,38 @@ char *minifat_strtok(char *__restrict__ s, const char *__restrict__ sep) {
         assert(curr_ubnd != 0);
         ptr = __minifat_combine_ptr(ptr, curr_ubnd);
     }
-    return ptr;
+    return ptr;*/
 }
 
 char *minifat_strtok_r(char *__restrict__ s, const char *__restrict__ sep, char **__restrict__ p) {
+    PTRTYPE ssize = 0;
     PTRTYPE curr_ubnd = 0;
+    char* sval = NULL;
+    sep = __minifat_uninstrument(sep);
+    p   = __minifat_uninstrument(p);
+    if (s) {
+        // first invocation
+        curr_ubnd = __minifat_extract_ubnd(s);
+        sval = __minifat_uninstrument(s);
+        ssize = __minifat_extract_size(s);
+    } else {
+        // following invocations
+        curr_ubnd = __minifat_extract_ubnd(*p);
+        ssize = __minifat_extract_size(*p);
+        *p = __minifat_uninstrument(*p);       
+    }
+
+    *p = __minifat_uninstrument(*p);
+    char* ptr = strtok_s(sval, &ssize, sep, p);
+    *p = __minifat_combine_ptr(*p, curr_ubnd);
+    if (ptr) {
+        // ptr points into s, so it has the same bounds as s
+        // (which value is memorized in curr_ubnd)
+        assert(curr_ubnd != 0);
+        ptr = __minifat_combine_ptr(ptr, curr_ubnd);
+    }
+    return ptr;
+    /*PTRTYPE curr_ubnd = 0;
     char* sval = NULL;
     sep = __minifat_uninstrument(sep);
     p   = __minifat_uninstrument(p);
@@ -786,7 +947,7 @@ char *minifat_strtok_r(char *__restrict__ s, const char *__restrict__ sep, char 
         assert(curr_ubnd != 0);
         ptr = __minifat_combine_ptr(ptr, curr_ubnd);
     }
-    return ptr;
+    return ptr;*/
 }
 
 int minifat_strverscmp(const char *l, const char *r) {
