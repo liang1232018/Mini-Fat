@@ -47,6 +47,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 extern "C"
 {
@@ -66,6 +67,9 @@ typedef map<Value *, Value *> PtrInfo;
 // 用于计算bound相关信息的
 PtrInfo boundInfo;
 PtrInfo sizeInfo;
+vector<Value*> maskInfo;
+map<Value*, Type*> PtrTypeInfo;
+set<Instruction*> eraseInstInfo;
 /*
  * A bounds object represents a range lb..ub.  As a simplification, the lower
  * bounds is always fixed to (0) since 99% of the time this is sufficient.
@@ -649,13 +653,20 @@ static Value *calcBasePtr(Function *F, Value *Ptr)
     Value *size_base = builder.CreateAnd(NBasePtr,0xFC00000000000000);
     size_base = builder.CreateLShr(size_base,58);
     Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
-    sizeInfo.insert(make_pair(BasePtr,Size));
-    // Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
-    // Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
-    // Bound = builder.CreateAdd(Bound,Size);
-    // Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
-    // boundInfo.insert(make_pair(BasePtr, Bound));
-
+    // sizeInfo.insert(make_pair(BasePtr,Size));
+    Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
+    Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
+    Bound = builder.CreateAdd(Bound,Size);
+    // Bound = builder.CreateShl(Bound,8);
+    // Value *isNull = builder.CreateICmpEQ(Bound,builder.getInt64(0));
+    // Bound = builder.CreateSelect(isNull, builder.getInt64(0xFFFFFFFFFFFFFFFF),Bound);
+    Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
+    BasePtr = builder.CreateBitCast(BasePtr, builder.getInt64Ty());
+    // BasePtr = builder.CreateShl(BasePtr,8);
+    BasePtr = builder.CreateAnd(BasePtr,0x03FFFFFFFFFFFFFF);
+    BasePtr = builder.CreateBitCast(BasePtr, builder.getInt8PtrTy());
+    boundInfo.insert(make_pair(BasePtr, Bound));
+printf("aaa6666!\n");
     return BasePtr;
 }
 
@@ -705,6 +716,22 @@ static Constant *calcBasePtr(const TargetLibraryInfo *TLI, Function *F,
                 baseInfo);
             BasePtr = ConstantExpr::getSelect(CE->getOperand(0), BasePtrA,
                 BasePtrB);
+printf("aaa77777!\n");
+            // IRBuilder<> builder(BasePtr);
+            // Value* IBasePtr = builder.CreateBitCast(BasePtr,builder.getInt64Ty());
+            // Value* NBasePtr = builder.CreateNot(IBasePtr);
+            // Value *size_base = builder.CreateAnd(NBasePtr,0xFC00000000000000);
+            // size_base = builder.CreateLShr(size_base,58);
+            // Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
+
+            // Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
+            // Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
+            // Bound = builder.CreateAdd(Bound,Size);
+            // Bound = builder.CreateShl(Bound,8);
+            // Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
+            // boundInfo.insert(make_pair(BasePtr, Bound));
+
+            // BasePtr = builder.CreateShl(BasePtr,8);
             break;
         }
         case Instruction::IntToPtr:
@@ -764,12 +791,21 @@ static Value *calcBasePtr(const TargetLibraryInfo *TLI, Function *F,
             Value *size_base = builder.CreateAnd(NBasePtr,0xFC00000000000000);
             size_base = builder.CreateLShr(size_base,58);
             Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
-            sizeInfo.insert(make_pair(BasePtr,Size));
-            // Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
-            // Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
-            // Bound = builder.CreateAdd(Bound,Size);
-            // Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
-            // boundInfo.insert(make_pair(BasePtr, Bound));
+            // sizeInfo.insert(make_pair(BasePtr,Size));
+            Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
+            Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
+            Bound = builder.CreateAdd(Bound,Size);
+            // Bound = builder.CreateShl(Bound,8);
+            // Value *isNull = builder.CreateICmpEQ(Bound,builder.getInt64(0));
+            // Bound = builder.CreateSelect(isNull, builder.getInt64(0xFFFFFFFFFFFFFFFF),Bound);
+            Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
+
+            BasePtr = builder.CreateBitCast(BasePtr, builder.getInt64Ty());
+            // BasePtr = builder.CreateShl(BasePtr,8);
+            BasePtr = builder.CreateAnd(BasePtr,0x03FFFFFFFFFFFFFF);
+            BasePtr = builder.CreateBitCast(BasePtr, builder.getInt8PtrTy());
+            boundInfo.insert(make_pair(BasePtr, Bound));
+printf("aaa5555!\n");
         }
     }
     else if (BitCastInst *Cast = dyn_cast<BitCastInst>(Ptr))
@@ -790,12 +826,21 @@ static Value *calcBasePtr(const TargetLibraryInfo *TLI, Function *F,
         Value *size_base = builder.CreateAnd(NBasePtr,0xFC00000000000000);
         size_base = builder.CreateLShr(size_base,58);
         Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
-        sizeInfo.insert(make_pair(BasePtr,Size));
-        // Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
-        // Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
-        // Bound = builder.CreateAdd(Bound,Size);
-        // Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
-        // boundInfo.insert(make_pair(BasePtr, Bound));
+        // sizeInfo.insert(make_pair(BasePtr,Size));
+        Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
+        Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
+        Bound = builder.CreateAdd(Bound,Size);
+        // Bound = builder.CreateShl(Bound,8);
+        // Value *isNull = builder.CreateICmpEQ(Bound,builder.getInt64(0));
+        // Bound = builder.CreateSelect(isNull, builder.getInt64(0xFFFFFFFFFFFFFFFF),Bound);
+        Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
+
+        BasePtr = builder.CreateBitCast(BasePtr, builder.getInt64Ty());
+        // BasePtr = builder.CreateShl(BasePtr,8);
+        BasePtr = builder.CreateAnd(BasePtr,0x03FFFFFFFFFFFFFF);
+        BasePtr = builder.CreateBitCast(BasePtr, builder.getInt8PtrTy());
+        boundInfo.insert(make_pair(BasePtr, Bound));
+printf("aaa434444!\n");
     }
     else if (Constant *C = dyn_cast<Constant>(Ptr))
         BasePtr = calcBasePtr(TLI, F, C, baseInfo);
@@ -819,12 +864,22 @@ static Value *calcBasePtr(const TargetLibraryInfo *TLI, Function *F,
             Value *size_base = builder.CreateAnd(NBasePtr,0xFC00000000000000);
             size_base = builder.CreateLShr(size_base,58);
             Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
-            sizeInfo.insert(make_pair(BasePtr,Size));
-            // Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
-            // Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
-            // Bound = builder.CreateAdd(Bound,Size);
-            // Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
-            // boundInfo.insert(make_pair(BasePtr, Bound));
+            // sizeInfo.insert(make_pair(BasePtr,Size));
+            Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
+            Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
+            Bound = builder.CreateAdd(Bound,Size);
+            // Bound = builder.CreateShl(Bound,8);
+            // Value *isNull = builder.CreateICmpEQ(Bound,builder.getInt64(0));
+            // Bound = builder.CreateSelect(isNull, builder.getInt64(0xFFFFFFFFFFFFFFFF),Bound);
+            Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
+
+            BasePtr = builder.CreateBitCast(BasePtr, builder.getInt64Ty());
+            // BasePtr = builder.CreateShl(BasePtr,8);
+            BasePtr = builder.CreateAnd(BasePtr,0x03FFFFFFFFFFFFFF);
+            BasePtr = builder.CreateBitCast(BasePtr, builder.getInt8PtrTy());
+            boundInfo.insert(make_pair(BasePtr, Bound));
+            printf("aaa333!\n");
+
         }
         else
             BasePtr = calcBasePtr(F, Ptr);
@@ -835,7 +890,27 @@ static Value *calcBasePtr(const TargetLibraryInfo *TLI, Function *F,
         IRBuilder<> builder(PHI);
         PHINode *BasePHI = builder.CreatePHI(builder.getInt8PtrTy(),
             numValues);
+        // Value* IBasePtr = builder.CreateBitCast(BasePHI,builder.getInt64Ty());
+        // Value* NBasePtr = builder.CreateNot(IBasePtr);
+        // Value *size_base = builder.CreateAnd(NBasePtr,0xFC00000000000000);
+        // size_base = builder.CreateLShr(size_base,58);
+        // Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
+
+        // Value *Bound =  builder.CreateBitCast(BasePHI,builder.getInt64Ty());
+        // Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
+        // Bound = builder.CreateAdd(Bound,Size);
+        // Bound = builder.CreateShl(Bound,8);
+        // Value *isNull = builder.CreateIsNull(Bound);
+        // Bound = builder.CreateSelect(isNull, builder.getInt64(0xFFFFFFFFFFFFFFFF),Bound);
+        // Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());       
+        printf("aaa222!\n");
+        // Value *TBasePtr = builder.CreateBitCast(BasePHI,builder.getInt64Ty());
+        // TBasePtr = builder.CreateShl(TBasePtr,8);
+        // TBasePtr = builder.CreateBitCast(TBasePtr,builder.getInt8PtrTy());
+        // baseInfo.insert(make_pair(Ptr, TBasePtr));
+        // boundInfo.insert(make_pair(TBasePtr, Bound));
         baseInfo.insert(make_pair(Ptr, BasePHI));
+
         for (size_t i = 0; i < numValues; i++)
             BasePHI->addIncoming(UndefValue::get(builder.getInt8PtrTy()),
                 PHI->getIncomingBlock(i));
@@ -1092,6 +1167,9 @@ static void getInterestingInsts(const TargetLibraryInfo *TLI,
 static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
     unsigned info, const PtrInfo &baseInfo)
 {
+    Module *M = I->getModule();
+    // BasicBlock *RIGHT  = BasicBlock::Create(M->getContext(), "", I->getFunction());
+    // BasicBlock *OVERFLOW  = BasicBlock::Create(M->getContext(), "", I->getFunction());
     IRBuilder<> builder(I);
     auto i = baseInfo.find(Ptr);
     if (i == baseInfo.end())
@@ -1113,7 +1191,7 @@ static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
         // This is a nonfat pointer.
         return;
     }
-    Module *M = builder.GetInsertBlock()->getParent()->getParent();
+    
     size_t size = 0;
     if (option_check_whole_access &&
             (info == LOWFAT_OOB_ERROR_READ || info == LOWFAT_OOB_ERROR_WRITE))
@@ -1125,87 +1203,474 @@ static void insertBoundsCheck(const DataLayout *DL, Instruction *I, Value *Ptr,
             size = DL->getTypeAllocSize(Ty)-1;
         }
     }
-    
+    bool addflag = false;
+    bool subflag = false;
+    if(GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(Ptr) ) {
+        printf("gep\n");
+
+        int indices = GEP->getNumIndices ();
+        for(int j=0;j<indices;j++) {
+            Value *index = GEP->getOperand(j+2);
+            if(PHINode *PHI = dyn_cast<PHINode>(index)) {
+                printf("phi node!!!\n");
+                int comings = PHI->getNumIncomingValues();
+                for(int i=0;i<comings;i++) {
+                    Value *coming = PHI->getIncomingValue(i);
+                    if(Constant* constant = dyn_cast<Constant>(coming))
+                        continue;
+                    else  if(Instruction *I = dyn_cast<Instruction>(coming) ) {
+                        printf("inst!! %s \n",I->getOpcodeName());
+                        switch (I->getOpcode()) {
+                            case Instruction::Add:addflag=true;printf("+++++\n");break;
+                            case Instruction::Sub:subflag=true;printf("-----\n");break;
+                        }
+                    }
+                }
+            }
+        }
+    } else if(BitCastInst *Cast = dyn_cast<BitCastInst>(Ptr)) {
+        printf("cast\n");
+        Value *index = Cast->getOperand(0);
+        if(Instruction *I = dyn_cast<Instruction>(index) ) {
+            switch (I->getOpcode()) {
+                case Instruction::Add:printf("+++++\n");break;
+                case Instruction::Sub:printf("-----\n");break;
+            }
+            
+        }
+    }
+
     Value *Size = builder.getInt64(size);
     Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt8PtrTy());
+    Value *IPtr = builder.CreatePtrToInt(Ptr,builder.getInt64Ty());
+    
+
+    // Value *printf2 = M->getOrInsertFunction("minifat_printf_2", builder.getVoidTy(), builder.getInt32Ty());
+    //     builder.CreateCall(printf2,{builder.getInt32(4)});
     
     auto j = boundInfo.find(BasePtr);
     auto k = sizeInfo.find(BasePtr);
+
+    Value *Cond;
+    Value* Bound;
+    if(j == boundInfo.end() && k == sizeInfo.end()) {
+        
+        Value *IBasePtr = builder.CreatePtrToInt(BasePtr,builder.getInt64Ty());
+
+        Value *TBasePtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
+        
+        Value* NBasePtr = builder.CreateNot(TBasePtr);
+        Value *size_base = builder.CreateAnd(NBasePtr,0xFC00000000000000);
+        size_base = builder.CreateLShr(size_base,58);
+        Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
+        IPtr = builder.CreateAnd(IPtr,0x03FFFFFFFFFFFFFF);
+        IBasePtr = builder.CreateAnd(IBasePtr,0x03FFFFFFFFFFFFFF);
+        Bound = builder.CreateAdd(IBasePtr,Size);
+
+        Value *Diff = builder.CreateSub(IPtr, IBasePtr);
+        Cond = builder.CreateICmpUGE(Size, Diff);
+        IPtr = builder.CreateIntToPtr(IPtr, Ptr->getType());
+    } else {
+        Bound = j->second;
+        IPtr = builder.CreateAnd(IPtr,0x03FFFFFFFFFFFFFF);
+        IPtr = builder.CreateIntToPtr(IPtr, Ptr->getType());
+        Value* Cmp1 = builder.CreateICmpUGE(IPtr,BasePtr);
+        Value* Cmp2 = builder.CreateICmpUGE(Bound,IPtr);
+        Cond = builder.CreateAnd(Cmp1,Cmp2);
+    }
+
+
+    maskInfo.push_back(IPtr);
+    
     
     // 如果在一定在界内，那么直接加指针操作即可
-    if(info != MINIFAT_PTR_INVALID) {
+    if(info != MINIFAT_PTR_INVALID  && info != LOWFAT_OOB_ERROR_ESCAPE_STORE) {
         // check_nums++;
         // printf("check_nums %d\n",check_nums);
-        if(j == boundInfo.end() && k == sizeInfo.end())
-        {
-            Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
-            builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
-            builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
-            // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
-            //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+
+        if(LoadInst *Load = dyn_cast<LoadInst>(I)) {
+            Value* ret = dyn_cast<Value>(I);
+            if(ret == NULL)
+                printf("what??\n");
+            
+            
+            
+            // Value* minifat_check =  M->getOrInsertFunction("minifat_check",
+            //     ret->getType(), builder.getInt32Ty(), Ptr->getType(),
             //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
-            TPtr = builder.CreateCall(BoundsCheck,
-                {builder.getInt32(info), TPtr, Size, BasePtr});
-            // builder.CreateCall(BoundsCheck,
-            //     {builder.getInt32(info), TPtr, Size, BasePtr});
-        } else if (k == sizeInfo.end()){
-            Value* Bound = j->second;
-            Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_bound",
-            builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
-            builder.getInt64Ty(), builder.getInt8PtrTy(),builder.getInt8PtrTy(), nullptr);
-            // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
-            //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
-            //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
-            TPtr = builder.CreateCall(BoundsCheck,
-                {builder.getInt32(info), TPtr, Size, BasePtr,Bound});
-            // builder.CreateCall(BoundsCheck,
-            //     {builder.getInt32(info), TPtr, Size, BasePtr});
-        } else {
-            Value* TSize = k->second;
-            Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_size",
-            builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
-            builder.getInt64Ty(), builder.getInt8PtrTy(),builder.getInt64Ty(), nullptr);
-            // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
-            //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
-            //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
-            TPtr = builder.CreateCall(BoundsCheck,
-                {builder.getInt32(info), TPtr, Size, BasePtr,TSize});
-            // builder.CreateCall(BoundsCheck,
-            //     {builder.getInt32(info), TPtr, Size, BasePtr});
+            // Value *load_ret =  builder.CreateCall(minifat_check,
+            //             {builder.getInt32(info), Ptr, Size, BasePtr});
+
+
+            BasicBlock *Head = I->getParent();           
+            BasicBlock *Tail = Head->splitBasicBlock(I->getIterator());
+            
+            
+
+            Instruction *HeadOldTerm = Head->getTerminator();
+            LLVMContext &C = Head->getContext();
+
+            
+            BasicBlock *ThenBlock = BasicBlock::Create(C, "", Head->getParent(), Tail);
+            BasicBlock *ElseBlock = BasicBlock::Create(C, "", Head->getParent(), Tail);
+            // BasicBlock *EndBlock = BasicBlock::Create(C, "", Head->getParent(), Tail);
+
+            BranchInst *HeadNewTerm =
+                BranchInst::Create(/*ifTrue*/ThenBlock, /*ifFalse*/ElseBlock, Cond);
+            
+            ReplaceInstWithInst(HeadOldTerm, HeadNewTerm);
+
+            // 不越界
+            IRBuilder<> builder2(ThenBlock);
+            Value *load_ret_right = builder2.CreateLoad(Ptr);
+            // Value *printf1 = M->getOrInsertFunction("minifat_printf_2", builder2.getVoidTy(), builder2.getInt32Ty());
+            // builder2.CreateCall(printf1,{builder2.getInt32(1)});
+            // BranchInst *ThenTerm = BranchInst::Create(EndBlock, ThenBlock);
+            // ThenTerm->setDebugLoc(I->getDebugLoc());
+            builder2.CreateBr(Tail);
+
+            // 越界
+            IRBuilder<> builder3(ElseBlock);
+            // Value* NPtr =  builder3.CreateBitCast(Ptr,builder3.getInt64Ty());
+            // NPtr =  builder3.CreateAdd(NPtr,builder3.getInt64(1));
+            // NPtr = builder3.CreateBitCast(NPtr, Ptr->getType());
+            // Value *load_ret_overflow = builder3.CreateLoad(Ptr->getType(), BasePtr);
+
+            if(addflag) {
+                Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_bound_new_add_withoutsize",
+                builder3.getInt8PtrTy(), builder3.getInt32Ty(), builder3.getInt8PtrTy(),
+                builder3.getInt64Ty(), builder3.getInt8PtrTy(),builder3.getInt8PtrTy(), nullptr);
+                // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
+                //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+                //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+                TPtr = builder3.CreateCall(BoundsCheck,
+                    {builder3.getInt32(info), IPtr, Size, BasePtr,Bound});
+                // builder.CreateCall(BoundsCheck,
+                //     {builder.getInt32(info), TPtr, Size, BasePtr});
+
+            } else if(subflag) {
+                Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_bound_new_sub_withoutsize",
+                builder3.getInt8PtrTy(), builder3.getInt32Ty(), builder3.getInt8PtrTy(),
+                builder3.getInt64Ty(), builder3.getInt8PtrTy(),builder3.getInt8PtrTy(), nullptr);
+                // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
+                //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+                //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+                TPtr = builder3.CreateCall(BoundsCheck,
+                    {builder3.getInt32(info), IPtr, Size, BasePtr,Bound});
+                // builder.CreateCall(BoundsCheck,
+                //     {builder.getInt32(info), TPtr, Size
+            } else {
+                Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_bound_new_withoutsize",
+                builder3.getInt8PtrTy(), builder3.getInt32Ty(), builder3.getInt8PtrTy(),
+                builder3.getInt64Ty(), builder3.getInt8PtrTy(),builder3.getInt8PtrTy(), nullptr);
+                // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
+                //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+                //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+                TPtr = builder3.CreateCall(BoundsCheck,
+                    {builder3.getInt32(info), IPtr, Size, BasePtr,Bound});
+                // builder.CreateCall(BoundsCheck,
+                //     {builder.getInt32(info), TPtr, Size, BasePtr});
+            } 
+            if(TPtr->getType() != Ptr->getType())
+                TPtr = builder3.CreateBitCast(TPtr,Ptr->getType());
+            Value *load_ret_overflow = builder3.CreateLoad(TPtr);
+            // Value *printf2 = M->getOrInsertFunction("minifat_printf_2", builder3.getVoidTy(), builder3.getInt32Ty());
+            // builder3.CreateCall(printf2,{builder3.getInt32(2)});
+            // BranchInst *ElseTerm = BranchInst::Create(EndBlock, ElseBlock);
+            // ElseTerm->setDebugLoc(I->getDebugLoc());
+            builder3.CreateBr(Tail);
+
+            
+            IRBuilder<> builder4(I);
+            int numValues = 2;
+            PHINode *PHI = builder4.CreatePHI(ret->getType() ,numValues);
+
+            PHI->addIncoming(UndefValue::get( ret->getType()),ThenBlock);
+            PHI->addIncoming(UndefValue::get( ret->getType()),ElseBlock);
+            // PHI->setIncomingBlock(0, ThenBlock);
+            PHI->setIncomingValue(0, load_ret_right);
+
+            
+            // PHI->setIncomingBlock(1, ElseBlock);
+            PHI->setIncomingValue(1, load_ret_overflow);
+            // Value *Cmp = builder4.CreateICmpUGE(Ptr,BasePtr);
+            // Value *result = builder4.CreateSelect(Cmp,load_ret_right,load_ret_overflow);
+            // Value *printf3 = M->getOrInsertFunction("minifat_printf_2", builder4.getVoidTy(), builder4.getInt32Ty());
+            // builder4.CreateCall(printf3,{PHI});
+            // builder4.CreateBr(Tail);
+
+            // IRBuilder<> builder5(Tail);
+            // Value *printf4 = M->getOrInsertFunction("minifat_printf_2", builder5.getVoidTy(), builder5.getInt32Ty());
+            // builder5.CreateCall(printf4,{builder5.getInt32(4)});
+            
+
+
+            // 建立cfg图的           
+            // BranchInst *EndTerm = BranchInst::Create(Tail, EndBlock);
+            // EndTerm->setDebugLoc(I->getDebugLoc());
+
+            
+
+            // Value* load_ret = builder.CreateLoad(Ptr);
+            
+            
+            // PHINode *PHI = builder4.CreatePHI(ret->getType() ,numValues);
+            // // PHI->addIncoming(UndefValue::get( ret->getType()),ThenBlock);
+            // PHI->setIncomingBlock(0, ThenBlock);
+            // PHI->setIncomingValue(0, load_ret_right);
+
+            // // PHI->addIncoming(UndefValue::get( ret->getType()),ElseBlock);
+            // PHI->setIncomingBlock(1, ElseBlock);
+            // PHI->setIncomingValue(1, load_ret_overflow);
+
+            vector<User *> replace;
+            for (User *Usr: I->users())
+            {
+                replace.push_back(Usr);
+            }
+            // 带size的指针
+            for (User *Usr: replace)
+                Usr->replaceUsesOfWith(I, PHI);
+            
+            // eraseInstInfo.insert(I);
+
+            // if(ret->getType()->isPointerTy ())
+            //     I->eraseFromParent();
+
+        } else if(StoreInst *Store = dyn_cast<StoreInst>(I)) {
+            BasicBlock *Head = I->getParent();           
+            BasicBlock *Tail = Head->splitBasicBlock(I->getIterator());
+            
+            
+
+            Instruction *HeadOldTerm = Head->getTerminator();
+            LLVMContext &C = Head->getContext();
+
+            
+            BasicBlock *ThenBlock = BasicBlock::Create(C, "", Head->getParent(), Tail);
+            BasicBlock *ElseBlock = BasicBlock::Create(C, "", Head->getParent(), Tail);
+            // BasicBlock *EndBlock = BasicBlock::Create(C, "", Head->getParent(), Tail);
+
+            BranchInst *HeadNewTerm =
+                BranchInst::Create(/*ifTrue*/ThenBlock, /*ifFalse*/ElseBlock, Cond);
+            
+            ReplaceInstWithInst(HeadOldTerm, HeadNewTerm);
+
+            // 不越界
+            IRBuilder<> builder2(ThenBlock);
+            builder2.CreateStore(Store->getOperand(0),Ptr);
+            builder2.CreateBr(Tail);
+
+            // 越界
+            IRBuilder<> builder3(ElseBlock);
+            if(addflag) {
+                Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_bound_new_add_withoutsize",
+                builder3.getInt8PtrTy(), builder3.getInt32Ty(), builder3.getInt8PtrTy(),
+                builder3.getInt64Ty(), builder3.getInt8PtrTy(),builder3.getInt8PtrTy(), nullptr);
+                // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
+                //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+                //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+                TPtr = builder3.CreateCall(BoundsCheck,
+                    {builder3.getInt32(info), IPtr, Size, BasePtr,Bound});
+                // builder.CreateCall(BoundsCheck,
+                //     {builder.getInt32(info), TPtr, Size, BasePtr});
+
+            } else if(subflag) {
+                Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_bound_new_sub_withoutsize",
+                builder3.getInt8PtrTy(), builder3.getInt32Ty(), builder3.getInt8PtrTy(),
+                builder3.getInt64Ty(), builder3.getInt8PtrTy(),builder3.getInt8PtrTy(), nullptr);
+                // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
+                //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+                //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+                TPtr = builder3.CreateCall(BoundsCheck,
+                    {builder3.getInt32(info), IPtr, Size, BasePtr,Bound});
+                // builder.CreateCall(BoundsCheck,
+                //     {builder.getInt32(info), TPtr, Size
+            } else {
+                Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_bound_new_withoutsize",
+                builder3.getInt8PtrTy(), builder3.getInt32Ty(), builder3.getInt8PtrTy(),
+                builder3.getInt64Ty(), builder3.getInt8PtrTy(),builder3.getInt8PtrTy(), nullptr);
+                // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
+                //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+                //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+                TPtr = builder3.CreateCall(BoundsCheck,
+                    {builder3.getInt32(info), IPtr, Size, BasePtr,Bound});
+                // builder.CreateCall(BoundsCheck,
+                //     {builder.getInt32(info), TPtr, Size, BasePtr});
+            } 
+            if(TPtr->getType() != Ptr->getType())
+                TPtr = builder3.CreateBitCast(TPtr,Ptr->getType());
+            builder3.CreateStore(Store->getOperand(0), TPtr);
+            // Value *printf2 = M->getOrInsertFunction("minifat_printf_2", builder3.getVoidTy(), builder3.getInt32Ty());
+            // builder3.CreateCall(printf2,{builder3.getInt32(2)});
+            // BranchInst *ElseTerm = BranchInst::Create(EndBlock, ElseBlock);
+            // ElseTerm->setDebugLoc(I->getDebugLoc());
+            builder3.CreateBr(Tail);
+
+            
+            
+            // IRBuilder<> builder4(I);
+            // Value *nop = builder4.CreateAdd(builder4.getInt32(1),builder4.getInt32(1));
+            // eraseInstInfo.insert(I);
+            I->eraseFromParent();
         }
         
-        if(LoadInst *Load = dyn_cast<LoadInst>(I)) {
-            auto OI = Load->op_begin();
-            if(OI != Load->op_end() && (*OI)->getType()->getTypeID () == 15)
-                *OI = TPtr;
+        // 原本check加返回值的暂时不要
+        // if(j == boundInfo.end() && k == sizeInfo.end())
+        // {
+        //     if(addflag) {
+        //         printf("old\n");
+        //         Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_add",
+        //         builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+        //         builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+        //         // // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
+        //         // //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+        //         // //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+        //         TPtr = builder.CreateCall(BoundsCheck,
+        //             {builder.getInt32(info), TPtr, Size, BasePtr});
+        //         // builder.CreateCall(BoundsCheck,
+        //         //     {builder.getInt32(info), TPtr, Size, BasePtr});
 
-        } else if(StoreInst *Store = dyn_cast<StoreInst>(I) ) {
-            if(info != LOWFAT_OOB_ERROR_ESCAPE_STORE) {
-                auto OI = Store->op_begin();
-                OI++;
-                if(OI != Store->op_end() && (*OI)->getType()->getTypeID () == 15)
-                    *OI = TPtr;     
-            }
-                    
-        } else if (MemSetInst *MI = dyn_cast<MemSetInst>(I)) {
-            TPtr = builder.CreateBitCast(TPtr, builder.getInt64Ty());
-            Value *mem_size = MI->getOperand(2);
-            TPtr = builder.CreateSub(TPtr,mem_size);
-            TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
+        //     } else if(subflag) {
+        //         Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_sub",
+        //         builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+        //         builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+        //         // // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
+        //         // //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+        //         // //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+        //         TPtr = builder.CreateCall(BoundsCheck,
+        //             {builder.getInt32(info), TPtr, Size, BasePtr});
+        //         // builder.CreateCall(BoundsCheck,
+        //         //     {builder.getInt32(info), TPtr, Size, BasePtr});
 
-            auto OI = MI->op_begin();
-            *OI = TPtr;
-        } else if (MemTransferInst *MI = dyn_cast<MemTransferInst>(I)) {
-            if(info == LOWFAT_OOB_ERROR_MEMCPY_ONE) {
-                auto OI = MI->op_begin();
-                *OI = TPtr;
-            } else if(info == LOWFAT_OOB_ERROR_MEMCPY_TWO) {
-                auto OI = MI->op_begin();
-                OI++;
-                *OI = TPtr;
-            }
-        } 
+        //     } else {
+        //         Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
+        //         builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+        //         builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+        //         // // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
+        //         // //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+        //         // //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+        //         TPtr = builder.CreateCall(BoundsCheck,
+        //             {builder.getInt32(info), TPtr, Size, BasePtr});
+        //         // builder.CreateCall(BoundsCheck,
+        //         //     {builder.getInt32(info), TPtr, Size, BasePtr});
+        //     }
+            
+        // } else /*if (k == sizeInfo.end())*/ {
+        //     if(addflag) {
+        //         printf("new\n");
+        //         Value* Bound = j->second;
+        //         Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_bound_new_add",
+        //         builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+        //         builder.getInt64Ty(), builder.getInt8PtrTy(),builder.getInt8PtrTy(), nullptr);
+        //         // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
+        //         //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+        //         //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+        //         TPtr = builder.CreateCall(BoundsCheck,
+        //             {builder.getInt32(info), TPtr, Size, BasePtr,Bound});
+        //         // builder.CreateCall(BoundsCheck,
+        //         //     {builder.getInt32(info), TPtr, Size, BasePtr});
 
+        //     } else if(subflag) {
+        //         Value* Bound = j->second;
+        //         Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_bound_new_sub",
+        //         builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+        //         builder.getInt64Ty(), builder.getInt8PtrTy(),builder.getInt8PtrTy(), nullptr);
+        //         // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
+        //         //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+        //         //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+        //         TPtr = builder.CreateCall(BoundsCheck,
+        //             {builder.getInt32(info), TPtr, Size, BasePtr,Bound});
+        //         // builder.CreateCall(BoundsCheck,
+        //         //     {builder.getInt32(info), TPtr, Size
+        //     } else {
+        //         Value* Bound = j->second;
+        //         Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_bound_new",
+        //         builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+        //         builder.getInt64Ty(), builder.getInt8PtrTy(),builder.getInt8PtrTy(), nullptr);
+        //         // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
+        //         //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+        //         //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+        //         TPtr = builder.CreateCall(BoundsCheck,
+        //             {builder.getInt32(info), TPtr, Size, BasePtr,Bound});
+        //         // builder.CreateCall(BoundsCheck,
+        //         //     {builder.getInt32(info), TPtr, Size, BasePtr});
+        //     } 
+        // } 
+
+
+        // if(LoadInst *Load = dyn_cast<LoadInst>(I)) {
+        //         auto OI = Load->op_begin();
+        //         if(OI != Load->op_end() && (*OI)->getType()->getTypeID () == 15){
+        //             if(TPtr->getType() != Ptr->getType())
+        //                 TPtr = builder.CreateBitCast(TPtr,Ptr->getType());
+        //             *OI = TPtr;  
+        //             maskInfo.push_back(TPtr);
+        //         }
+        //     } else if(StoreInst *Store = dyn_cast<StoreInst>(I) ) {
+        //         if(info != LOWFAT_OOB_ERROR_ESCAPE_STORE) {
+        //             auto OI = Store->op_begin();
+        //             OI++;
+        //             if(OI != Store->op_end() && (*OI)->getType()->getTypeID () == 15) {
+        //                 if(TPtr->getType() != Ptr->getType())
+        //                     TPtr = builder.CreateBitCast(TPtr,Ptr->getType());
+        //                 *OI = TPtr;     
+        //                 maskInfo.push_back(TPtr);
+        //             }
+                        
+        //         }
+                        
+        //     } else if (MemSetInst *MI = dyn_cast<MemSetInst>(I)) {
+        //         TPtr = builder.CreateBitCast(TPtr, builder.getInt64Ty());
+        //         Value *mem_size = MI->getOperand(2);
+        //         TPtr = builder.CreateSub(TPtr,mem_size);
+        //         TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
+
+        //         auto OI = MI->op_begin();
+        //         *OI = TPtr;
+        //         maskInfo.push_back(TPtr);
+        //     } else if (MemTransferInst *MI = dyn_cast<MemTransferInst>(I)) {
+        //         if(info == LOWFAT_OOB_ERROR_MEMCPY_ONE) {
+        //             auto OI = MI->op_begin();
+        //             if(TPtr->getType() != Ptr->getType())
+        //                 TPtr = builder.CreateBitCast(TPtr,Ptr->getType());
+        //             *OI = TPtr;
+        //             maskInfo.push_back(TPtr);
+        //         } else if(info == LOWFAT_OOB_ERROR_MEMCPY_TWO) {
+        //             auto OI = MI->op_begin();
+        //             OI++;
+        //             if(TPtr->getType() != Ptr->getType())
+        //                 TPtr = builder.CreateBitCast(TPtr,Ptr->getType());
+        //             *OI = TPtr;
+        //             maskInfo.push_back(TPtr);
+        //         }
+        //     } 
+        
+
+        // else if(j == boundInfo.end()){
+        //     Value* TSize = k->second;
+        //     Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_size",
+        //     builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+        //     builder.getInt64Ty(), builder.getInt8PtrTy(),builder.getInt64Ty(), nullptr);
+        //     // Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check",
+        //     //     builder.getVoidTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+        //     //     builder.getInt64Ty(), builder.getInt8PtrTy(), nullptr);
+        //     TPtr = builder.CreateCall(BoundsCheck,
+        //         {builder.getInt32(info), TPtr, Size, BasePtr,TSize});
+        //     // builder.CreateCall(BoundsCheck,
+        //     //     {builder.getInt32(info), TPtr, Size, BasePtr});
+        // } else {
+        //     Value* Bound = j->second;
+        //     Value* TSize = k->second;
+
+        //     Value *BoundsCheck = M->getOrInsertFunction("lowfat_oob_check_bound_size",
+        //     builder.getInt8PtrTy(), builder.getInt32Ty(), builder.getInt8PtrTy(),
+        //     builder.getInt64Ty(), builder.getInt8PtrTy(),builder.getInt8PtrTy(),builder.getInt64Ty(), nullptr);
+        //     TPtr = builder.CreateCall(BoundsCheck,
+        //         {builder.getInt32(info), TPtr, Size, BasePtr, Bound, TSize});
+        // }
+        
+        
 
     }    
     
@@ -1816,6 +2281,7 @@ static void replaceUnsafeLibFuncs(Module *M)
  */
 static void addLowFatFuncs(Module *M)
 {
+    
     Function *F = M->getFunction("minifat_bound");
      if (F != nullptr)
     {
@@ -1900,43 +2366,43 @@ static void addLowFatFuncs(Module *M)
         IRBuilder<> builder2(Error);
         if (Constant *C = dyn_cast<Constant>(Ptr)) {
             Constant *stripped = C->stripPointerCasts();
-            if (GlobalVariable *GV = dyn_cast<GlobalVariable>(stripped)) {
+            // if (GlobalVariable *GV = dyn_cast<GlobalVariable>(stripped)) {
 
-                Module *M = builder2.GetInsertBlock()->getParent()->getParent();
-                Value *package = M->getOrInsertFunction("minifat_gv_package",
-                    builder2.getInt8PtrTy(), builder2.getInt8PtrTy(), builder2.getInt64Ty(),
-                    nullptr);
+            //     Module *M = builder2.GetInsertBlock()->getParent()->getParent();
+            //     Value *package = M->getOrInsertFunction("minifat_gv_package",
+            //         builder2.getInt8PtrTy(), builder2.getInt8PtrTy(), builder2.getInt64Ty(),
+            //         nullptr);
 
-                const DataLayout *DL = &M->getDataLayout();
-                Type *Ty = GV->getType();
-                PointerType *PtrTy = dyn_cast<PointerType>(Ty);
-                assert(PtrTy != nullptr);
-                Ty = PtrTy->getElementType();
-                size_t size = DL->getTypeAllocSize(Ty);
-                size_t size_base = 64 - clzll(size);
+            //     const DataLayout *DL = &M->getDataLayout();
+            //     Type *Ty = GV->getType();
+            //     PointerType *PtrTy = dyn_cast<PointerType>(Ty);
+            //     assert(PtrTy != nullptr);
+            //     Ty = PtrTy->getElementType();
+            //     size_t size = DL->getTypeAllocSize(Ty);
+            //     size_t size_base = 64 - clzll(size);
 
-                if(size_base == 0) {
-                    Value *TPtr = builder2.CreateBitCast(Ptr,builder2.getInt64Ty());
-                    TPtr = builder2.CreateOr(TPtr,builder2.getInt64(0xFC00000000000000));
-                    TPtr = builder2.CreateBitCast(TPtr,Ptr->getType());
-                    builder2.CreateRet(TPtr);
-                } else {
-                    Value *Size = builder2.getInt64(size_base);
+            //     if(size_base == 0) {
+            //         Value *TPtr = builder2.CreateBitCast(Ptr,builder2.getInt64Ty());
+            //         TPtr = builder2.CreateOr(TPtr,builder2.getInt64(0xFC00000000000000));
+            //         TPtr = builder2.CreateBitCast(TPtr,Ptr->getType());
+            //         builder2.CreateRet(TPtr);
+            //     } else {
+            //         Value *Size = builder2.getInt64(size_base);
 
-                    Value *NGV = builder2.CreateCall(package,{GV, Size});
-                    NGV = builder2.CreateBitCast(NGV, builder2.getInt64Ty());
-                    Value *mask = builder2.CreateShl(builder2.getInt64(0xFFFFFFFFFFFFFFFF),Size);
-                    NGV = builder2.CreateAnd(NGV,mask);
-                    NGV = builder2.CreateBitCast(NGV, builder2.getInt8PtrTy());
-                    builder2.CreateRet(NGV);
-                }
+            //         Value *NGV = builder2.CreateCall(package,{GV, Size});
+            //         NGV = builder2.CreateBitCast(NGV, builder2.getInt64Ty());
+            //         Value *mask = builder2.CreateShl(builder2.getInt64(0xFFFFFFFFFFFFFFFF),Size);
+            //         NGV = builder2.CreateAnd(NGV,mask);
+            //         NGV = builder2.CreateBitCast(NGV, builder2.getInt8PtrTy());
+            //         builder2.CreateRet(NGV);
+            //     }
                 
-            } else {
+            // } else {
                 Value *TPtr = builder2.CreateBitCast(Ptr,builder2.getInt64Ty());
                 TPtr = builder2.CreateOr(TPtr,builder2.getInt64(0xFC00000000000000));
                 TPtr = builder2.CreateBitCast(TPtr,Ptr->getType());
                 builder2.CreateRet(TPtr);
-            }
+            // }
         } else {
             Value *TPtr = builder2.CreateBitCast(Ptr,builder2.getInt64Ty());
             TPtr = builder2.CreateOr(TPtr,builder2.getInt64(0xFC00000000000000));
@@ -2009,9 +2475,37 @@ static void addLowFatFuncs(Module *M)
         F->addFnAttr(llvm::Attribute::AlwaysInline);
     }
 
+    F = M->getFunction("minifat_check");
+    if(F != nullptr) 
+    {
+        BasicBlock *Entry = BasicBlock::Create(M->getContext(), "", F);
+        IRBuilder<> builder(Entry);
+        auto i = F->getArgumentList().begin();
+        Value *Info = &(*(i++));
+        Value *Ptr = &(*(i++));
+        Value *AccessSize = &(*(i++));
+        Value *BasePtr = &(*(i++));
+
+        if(PtrTypeInfo.find(Ptr) != PtrTypeInfo.end()) {
+            printf("ok!!\n");
+        } else {
+            printf("no!!\n");
+        }
+
+        Value* ret = builder.CreateLoad(Ptr);
+        builder.CreateRet(ret);
+
+        F->setOnlyReadsMemory();
+        F->setDoesNotThrow();
+        F->setLinkage(GlobalValue::InternalLinkage);
+        F->addFnAttr(llvm::Attribute::AlwaysInline);
+    }
+
+
     F = M->getFunction("lowfat_oob_check");
     if (F != nullptr)
     {
+        printf("aaa!\n");
         BasicBlock *Entry  = BasicBlock::Create(M->getContext(), "", F);
         // BasicBlock *Error  = BasicBlock::Create(M->getContext(), "", F);
         // BasicBlock *Return = BasicBlock::Create(M->getContext(), "", F);
@@ -2120,21 +2614,103 @@ static void addLowFatFuncs(Module *M)
         
 
         // 下面是认为全有size的
-        Value *TBasePtr = builder.CreateBitCast(BasePtr, builder.getInt64Ty());
+        Value *TBasePtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
+        
         Value* NBasePtr = builder.CreateNot(TBasePtr);
         Value *size_base = builder.CreateAnd(NBasePtr,0xFC00000000000000);
         size_base = builder.CreateLShr(size_base,58);
+        
+        
+        // 中间的某种存在错误移位的写法
+        // Value *isZero = builder.CreateICmpEQ(size_base,builder.getInt64(0x3F));
+        // builder.CreateCondBr(isZero, Error, Return);
+
+        // IRBuilder<> builder2(Error);
+        // Value *ETBasePtr = builder2.CreateLShr(TBasePtr,8);
+        // Value *ESize = builder2.CreateShl(builder2.getInt64(1),size_base);
+        // Value *ERealSize = builder2.CreateSub(ESize,AccessSize);
+
+        // // // The check is: if (ptr - base > size - sizeof(*ptr)) error();
+        // Value *EIPtr = builder2.CreatePtrToInt(Ptr, builder2.getInt64Ty());
+        // Value *EBound =  builder2.CreateBitCast(ETBasePtr,builder2.getInt64Ty());
+        // EBound = builder2.CreateAnd(EBound,0x03FFFFFFFFFFFFFF);
+        // EBound = builder2.CreateAdd(EBound,ERealSize);
+        // EBound = builder2.CreateBitCast(EBound,builder2.getInt8PtrTy());
+
+        // IBasePtr = builder2.CreateAnd(IBasePtr,0x03FFFFFFFFFFFFFF);
+        // EIPtr = builder2.CreateAnd(EIPtr,0x03FFFFFFFFFFFFFF);
+
+        // // Value *RIBasePtr = builder.CreateBitCast(IBasePtr,builder.getInt8PtrTy());
+        // // Value *RIPtr = builder.CreateBitCast(IPtr,builder.getInt8PtrTy());
+
+        // Value *ECmp2 = builder2.CreateICmpUGE(EIPtr,ETBasePtr);
+        // Value *ETRPtr = builder2.CreateSelect(ECmp2,EIPtr,ETBasePtr);
+
+        // // Size = builder.CreateSub(Size, AccessSize);
+        // // Value *Cmp = builder.CreateICmpUGE(Diff, Size);
+        // Value *ECmp = builder2.CreateICmpUGE(ETRPtr, EBound);
+        // // builder5.CreateCondBr(Cmp, Error, Return);
+        // Value *ERPtr = builder2.CreateSelect(ECmp,EBound,ETRPtr);
+        // builder2.CreateRet(ERPtr);
+
+
+
+        // IRBuilder<> builder3(Return);
+        // Value *Size = builder3.CreateShl(builder3.getInt64(1),size_base);
+        // Value *RealSize = builder3.CreateSub(Size,AccessSize);
+        // // BasePtr = builder.CreateBitCast(BasePtr, builder.getInt8PtrTy());
+
+        // // // The check is: if (ptr - base > size - sizeof(*ptr)) error();
+        // Value *IPtr = builder3.CreatePtrToInt(Ptr, builder3.getInt64Ty());
+        // Value *Bound =  builder3.CreateBitCast(TBasePtr,builder3.getInt64Ty());
+        // Bound = builder3.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
+        // Bound = builder3.CreateAdd(Bound,RealSize);
+        // Bound = builder3.CreateBitCast(Bound,builder3.getInt8PtrTy());
+
+        // IBasePtr = builder3.CreateAnd(IBasePtr,0x03FFFFFFFFFFFFFF);
+        // IPtr = builder3.CreateAnd(IPtr,0x03FFFFFFFFFFFFFF);
+
+        // // Value *RIBasePtr = builder.CreateBitCast(IBasePtr,builder.getInt8PtrTy());
+        // // Value *RIPtr = builder.CreateBitCast(IPtr,builder.getInt8PtrTy());
+
+        // Value *Cmp2 = builder3.CreateICmpUGE(IPtr,TBasePtr);
+        // Value *TRPtr = builder3.CreateSelect(Cmp2,IPtr,TBasePtr);
+
+        // Value *Diff = builder3.CreateSub(IPtr, IBasePtr);
+        // // Size = builder.CreateSub(Size, AccessSize);
+        // // Value *Cmp = builder.CreateICmpUGE(Diff, Size);
+        // Value *Cmp = builder3.CreateICmpUGE(TRPtr, Bound);
+        // // builder5.CreateCondBr(Cmp, Error, Return);
+
+        // Value *RPtr = builder3.CreateSelect(Cmp,Bound,TRPtr);
+
+        
+        // // Value *Warning = M->getOrInsertFunction("lowfat_oob_test",
+        // //         builder.getInt8PtrTy(), builder.getInt32Ty(),
+        // //         builder.getInt8PtrTy(), builder.getInt8PtrTy(), nullptr);
+        // // builder.CreateCall(Warning, {Info, Ptr, BasePtr});
+        // // Ptr = builder.CreateAdd(Ptr,builder.getInt64(1));
+        // // RPtr =  builder3.CreateBitCast(RPtr,builder3.getInt64Ty());
+        // // RPtr = builder.CreateShl(RPtr,8);
+
+        // // RPtr = builder.CreateAnd(RPtr,0x03FFFFFFFFFFFFFF);
+        // // RPtr = builder.CreateLShr(RPtr,8);
+        
+        // // RPtr = builder3.CreateBitCast(RPtr,builder3.getInt8PtrTy());
+        // builder3.CreateRet(RPtr);
+        // // builder5.CreateRetVoid();
+
         Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
-        Value *RealSize = builder.CreateSub(Size,AccessSize);
+        // Value *RealSize = builder.CreateSub(Size,AccessSize);
         // BasePtr = builder.CreateBitCast(BasePtr, builder.getInt8PtrTy());
 
         // // The check is: if (ptr - base > size - sizeof(*ptr)) error();
         Value *IPtr = builder.CreatePtrToInt(Ptr, builder.getInt64Ty());
-        Value *Bound =  builder.CreateBitCast(BasePtr,builder.getInt64Ty());
-        Bound = builder.CreateAnd(Bound,0x03FFFFFFFFFFFFFF);
-        Bound = builder.CreateAdd(Bound,RealSize);
-        Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
-
+        // Value *Bound =  builder.CreateBitCast(TBasePtr,builder.getInt64Ty());
+        Value *Bound = builder.CreateAnd(IBasePtr,0x03FFFFFFFFFFFFFF);
+        Bound = builder.CreateAdd(Bound,Size);
+        // Bound = builder.CreateBitCast(Bound,builder.getInt8PtrTy());
+        
         IBasePtr = builder.CreateAnd(IBasePtr,0x03FFFFFFFFFFFFFF);
         IPtr = builder.CreateAnd(IPtr,0x03FFFFFFFFFFFFFF);
 
@@ -2142,25 +2718,30 @@ static void addLowFatFuncs(Module *M)
         // Value *RIPtr = builder.CreateBitCast(IPtr,builder.getInt8PtrTy());
 
         Value *Cmp2 = builder.CreateICmpUGE(IPtr,IBasePtr);
-        Value *TRPtr = builder.CreateSelect(Cmp2,Ptr,BasePtr);
+        Value *TRPtr = builder.CreateSelect(Cmp2,IPtr,IBasePtr);
 
-        Value *Diff = builder.CreateSub(IPtr, IBasePtr);
+        // Value *Diff = builder.CreateSub(IPtr, IBasePtr);
         // Size = builder.CreateSub(Size, AccessSize);
         // Value *Cmp = builder.CreateICmpUGE(Diff, Size);
-        Value *Cmp = builder.CreateICmpUGE(Diff, RealSize);
+        Value *Cmp = builder.CreateICmpUGE(TRPtr, Bound);
         // builder5.CreateCondBr(Cmp, Error, Return);
 
         Value *RPtr = builder.CreateSelect(Cmp,Bound,TRPtr);
-
+        RPtr = builder.CreateBitCast(RPtr,builder.getInt8PtrTy());
         
         // Value *Warning = M->getOrInsertFunction("lowfat_oob_test",
         //         builder.getInt8PtrTy(), builder.getInt32Ty(),
         //         builder.getInt8PtrTy(), builder.getInt8PtrTy(), nullptr);
         // builder.CreateCall(Warning, {Info, Ptr, BasePtr});
         // Ptr = builder.CreateAdd(Ptr,builder.getInt64(1));
-        builder.CreateRet(RPtr);
-        // builder5.CreateRetVoid();
+        // RPtr =  builder3.CreateBitCast(RPtr,builder3.getInt64Ty());
+        // RPtr = builder.CreateShl(RPtr,8);
 
+        // RPtr = builder.CreateAnd(RPtr,0x03FFFFFFFFFFFFFF);
+        // RPtr = builder.CreateLShr(RPtr,8);
+        
+        // RPtr = builder3.CreateBitCast(RPtr,builder3.getInt8PtrTy());
+        builder.CreateRet(RPtr);
 
 
         // // // 添加我们的size获取方式 计算size是必须根据baseptr计算，新ptr不计算
@@ -2205,6 +2786,87 @@ static void addLowFatFuncs(Module *M)
 
         // IRBuilder<> builder3(Return);
         // builder3.CreateRetVoid();
+
+        F->setOnlyReadsMemory();
+        F->setDoesNotThrow();
+        F->setLinkage(GlobalValue::InternalLinkage);
+        F->addFnAttr(llvm::Attribute::AlwaysInline);
+    }
+    F = M->getFunction("lowfat_oob_check_add");
+    if (F != nullptr)
+    {
+        BasicBlock *Entry  = BasicBlock::Create(M->getContext(), "", F);
+
+
+        IRBuilder<> builder(Entry);
+        auto i = F->getArgumentList().begin();
+        Value *Info = &(*(i++));
+        Value *Ptr = &(*(i++));
+        Value *AccessSize = &(*(i++));
+        Value *BasePtr = &(*(i++));
+
+
+        Value *IBasePtr = builder.CreatePtrToInt(BasePtr,
+            builder.getInt64Ty());
+
+        
+
+        // 下面是认为全有size的
+        Value *TBasePtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
+        
+        Value* NBasePtr = builder.CreateNot(TBasePtr);
+        Value *size_base = builder.CreateAnd(NBasePtr,0xFC00000000000000);
+        size_base = builder.CreateLShr(size_base,58);
+
+
+        Value *Size = builder.CreateShl(builder.getInt64(1),size_base);
+        Value *IPtr = builder.CreatePtrToInt(Ptr, builder.getInt64Ty());
+        Value *Bound = builder.CreateAnd(IBasePtr,0x03FFFFFFFFFFFFFF);
+        Bound = builder.CreateAdd(Bound,Size);
+
+        IPtr = builder.CreateAnd(IPtr,0x03FFFFFFFFFFFFFF);
+
+
+        Value *Cmp = builder.CreateICmpUGE(IPtr, Bound);
+        Value *RPtr = builder.CreateSelect(Cmp,Bound,IPtr);
+        RPtr = builder.CreateIntToPtr(RPtr,builder.getInt8PtrTy());
+        
+
+        builder.CreateRet(RPtr);
+
+        F->setOnlyReadsMemory();
+        F->setDoesNotThrow();
+        F->setLinkage(GlobalValue::InternalLinkage);
+        F->addFnAttr(llvm::Attribute::AlwaysInline);
+    }
+    F = M->getFunction("lowfat_oob_check_sub");
+    if (F != nullptr)
+    {
+        BasicBlock *Entry  = BasicBlock::Create(M->getContext(), "", F);
+
+
+        IRBuilder<> builder(Entry);
+        auto i = F->getArgumentList().begin();
+        Value *Info = &(*(i++));
+        Value *Ptr = &(*(i++));
+        Value *AccessSize = &(*(i++));
+        Value *BasePtr = &(*(i++));
+
+
+        Value *IBasePtr = builder.CreatePtrToInt(BasePtr,
+            builder.getInt64Ty());
+        Value *IPtr = builder.CreatePtrToInt(Ptr, builder.getInt64Ty());
+
+        IBasePtr = builder.CreateAnd(IBasePtr,0x03FFFFFFFFFFFFFF);
+        IPtr = builder.CreateAnd(IPtr,0x03FFFFFFFFFFFFFF);
+
+
+        Value *Cmp2 = builder.CreateICmpUGE(IPtr,IBasePtr);
+        Value *TRPtr = builder.CreateSelect(Cmp2,IPtr,IBasePtr);
+        TRPtr = builder.CreateBitCast(TRPtr,builder.getInt8PtrTy());
+        
+
+        builder.CreateRet(TRPtr);
 
         F->setOnlyReadsMemory();
         F->setDoesNotThrow();
@@ -2269,7 +2931,7 @@ static void addLowFatFuncs(Module *M)
         F->setLinkage(GlobalValue::InternalLinkage);
         F->addFnAttr(llvm::Attribute::AlwaysInline);
     }
-    F = M->getFunction("lowfat_oob_check_size");
+    F = M->getFunction("lowfat_oob_check_bound_new");
     if (F != nullptr)
     {
         BasicBlock *Entry  = BasicBlock::Create(M->getContext(), "", F);
@@ -2286,6 +2948,301 @@ static void addLowFatFuncs(Module *M)
         Value *Ptr = &(*(i++));
         Value *AccessSize = &(*(i++));
         Value *BasePtr = &(*(i++));
+        Value *Bound = &(*(i++));        
+
+        Value *IPtr = builder.CreateBitCast(Ptr,builder.getInt64Ty());
+        IPtr = builder.CreateAnd(IPtr, 0x03FFFFFFFFFFFFFF);
+        IPtr = builder.CreateBitCast(IPtr, builder.getInt8PtrTy());
+
+        // Value *IBasePtr = builder.CreateBitCast(IBasePtr,builder.getInt8PtrTy());
+        // Value *RIPtr = builder.CreateBitCast(IPtr,builder.getInt8PtrTy());
+
+        Value *Cmp2 = builder.CreateICmpUGE(IPtr,BasePtr);
+        Value *TRPtr = builder.CreateSelect(Cmp2,IPtr,BasePtr);
+
+        Value *Cmp = builder.CreateICmpUGE(TRPtr, Bound);
+        Value *RPtr = builder.CreateSelect(Cmp,Bound,TRPtr);
+        // RPtr = builder.CreateBitCast(RPtr,builder.getInt8PtrTy());
+
+        // RPtr = builder.CreateBitCast(RPtr,builder.getInt64Ty());
+        // RPtr = builder.CreateLShr(RPtr,8);
+        // RPtr = builder.CreateBitCast(RPtr,Ptr->getType());
+        builder.CreateRet(RPtr);
+        
+        F->setOnlyReadsMemory();
+        F->setDoesNotThrow();
+        F->setLinkage(GlobalValue::InternalLinkage);
+        F->addFnAttr(llvm::Attribute::AlwaysInline);
+    }
+    F = M->getFunction("lowfat_oob_check_bound_new_add");
+    if (F != nullptr)
+    {
+        // 由于判断出是加法，所以只查bound
+        BasicBlock *Entry  = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *Error  = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *Return = BasicBlock::Create(M->getContext(), "", F);
+        
+        // 多一次判断时使用
+        // BasicBlock *NullReturn = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *NullGo = BasicBlock::Create(M->getContext(), "", F);
+
+        IRBuilder<> builder(Entry);
+        auto i = F->getArgumentList().begin();
+        Value *Info = &(*(i++));
+        Value *Ptr = &(*(i++));
+        Value *AccessSize = &(*(i++));
+        Value *BasePtr = &(*(i++));
+        Value *Bound = &(*(i++));        
+
+        Value *IPtr = builder.CreateBitCast(Ptr,builder.getInt64Ty());
+        IPtr = builder.CreateAnd(IPtr, 0x03FFFFFFFFFFFFFF);
+        IPtr = builder.CreateBitCast(IPtr, builder.getInt8PtrTy());
+
+        // Value *IBasePtr = builder.CreateBitCast(IBasePtr,builder.getInt8PtrTy());
+        // Value *RIPtr = builder.CreateBitCast(IPtr,builder.getInt8PtrTy());
+
+        Value *Cmp = builder.CreateICmpUGE(IPtr, Bound);
+        Value *RPtr = builder.CreateSelect(Cmp,Bound,IPtr);
+        // RPtr = builder.CreateBitCast(RPtr,builder.getInt8PtrTy());
+
+        // RPtr = builder.CreateBitCast(RPtr,builder.getInt64Ty());
+        // RPtr = builder.CreateLShr(RPtr,8);
+        // RPtr = builder.CreateBitCast(RPtr,Ptr->getType());
+        builder.CreateRet(RPtr);
+        
+        F->setOnlyReadsMemory();
+        F->setDoesNotThrow();
+        F->setLinkage(GlobalValue::InternalLinkage);
+        F->addFnAttr(llvm::Attribute::AlwaysInline);
+    }
+    F = M->getFunction("lowfat_oob_check_bound_new_sub");
+    if (F != nullptr)
+    {
+        //已经判断出是减法，所以只查base
+        BasicBlock *Entry  = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *Error  = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *Return = BasicBlock::Create(M->getContext(), "", F);
+        
+        // 多一次判断时使用
+        // BasicBlock *NullReturn = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *NullGo = BasicBlock::Create(M->getContext(), "", F);
+
+        IRBuilder<> builder(Entry);
+        auto i = F->getArgumentList().begin();
+        Value *Info = &(*(i++));
+        Value *Ptr = &(*(i++));
+        Value *AccessSize = &(*(i++));
+        Value *BasePtr = &(*(i++));
+        Value *Bound = &(*(i++));        
+
+        Value *IPtr = builder.CreateBitCast(Ptr,builder.getInt64Ty());
+        IPtr = builder.CreateAnd(IPtr, 0x03FFFFFFFFFFFFFF);
+        IPtr = builder.CreateBitCast(IPtr, builder.getInt8PtrTy());
+
+        // Value *IBasePtr = builder.CreateBitCast(IBasePtr,builder.getInt8PtrTy());
+        // Value *RIPtr = builder.CreateBitCast(IPtr,builder.getInt8PtrTy());
+
+        Value *Cmp2 = builder.CreateICmpUGE(IPtr,BasePtr);
+        Value *TRPtr = builder.CreateSelect(Cmp2,IPtr,BasePtr);
+
+        // RPtr = builder.CreateBitCast(RPtr,builder.getInt8PtrTy());
+
+        // RPtr = builder.CreateBitCast(RPtr,builder.getInt64Ty());
+        // RPtr = builder.CreateLShr(RPtr,8);
+        // RPtr = builder.CreateBitCast(RPtr,Ptr->getType());
+        builder.CreateRet(TRPtr);
+        
+        F->setOnlyReadsMemory();
+        F->setDoesNotThrow();
+        F->setLinkage(GlobalValue::InternalLinkage);
+        F->addFnAttr(llvm::Attribute::AlwaysInline);
+    }
+    F = M->getFunction("lowfat_oob_check_bound_new_withoutsize");
+    if (F != nullptr)
+    {
+        BasicBlock *Entry  = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *Error  = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *Return = BasicBlock::Create(M->getContext(), "", F);
+        
+        // 多一次判断时使用
+        // BasicBlock *NullReturn = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *NullGo = BasicBlock::Create(M->getContext(), "", F);
+
+        IRBuilder<> builder(Entry);
+        auto i = F->getArgumentList().begin();
+        Value *Info = &(*(i++));
+        Value *Ptr = &(*(i++));
+        Value *AccessSize = &(*(i++));
+        Value *BasePtr = &(*(i++));
+        Value *Bound = &(*(i++));        
+
+        Value *Cmp2 = builder.CreateICmpUGE(Ptr,BasePtr);
+        Value *TRPtr = builder.CreateSelect(Cmp2,Ptr,BasePtr);
+
+        Value *Cmp = builder.CreateICmpUGE(TRPtr, Bound);
+        Value *RPtr = builder.CreateSelect(Cmp,Bound,TRPtr);
+        // RPtr = builder.CreateBitCast(RPtr,builder.getInt8PtrTy());
+
+        // RPtr = builder.CreateBitCast(RPtr,builder.getInt64Ty());
+        // RPtr = builder.CreateLShr(RPtr,8);
+        // RPtr = builder.CreateBitCast(RPtr,Ptr->getType());
+        builder.CreateRet(RPtr);
+        
+        F->setOnlyReadsMemory();
+        F->setDoesNotThrow();
+        F->setLinkage(GlobalValue::InternalLinkage);
+        F->addFnAttr(llvm::Attribute::AlwaysInline);
+    }
+    F = M->getFunction("lowfat_oob_check_bound_new_add_withoutsize");
+    if (F != nullptr)
+    {
+        // 由于判断出是加法，所以只查bound
+        BasicBlock *Entry  = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *Error  = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *Return = BasicBlock::Create(M->getContext(), "", F);
+        
+        // 多一次判断时使用
+        // BasicBlock *NullReturn = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *NullGo = BasicBlock::Create(M->getContext(), "", F);
+
+        IRBuilder<> builder(Entry);
+        auto i = F->getArgumentList().begin();
+        Value *Info = &(*(i++));
+        Value *Ptr = &(*(i++));
+        Value *AccessSize = &(*(i++));
+        Value *BasePtr = &(*(i++));
+        Value *Bound = &(*(i++));        
+
+
+        Value *Cmp = builder.CreateICmpUGE(Ptr, Bound);
+        Value *RPtr = builder.CreateSelect(Cmp,Bound,Ptr);
+        // RPtr = builder.CreateBitCast(RPtr,builder.getInt8PtrTy());
+
+        // RPtr = builder.CreateBitCast(RPtr,builder.getInt64Ty());
+        // RPtr = builder.CreateLShr(RPtr,8);
+        // RPtr = builder.CreateBitCast(RPtr,Ptr->getType());
+        builder.CreateRet(RPtr);
+        
+        F->setOnlyReadsMemory();
+        F->setDoesNotThrow();
+        F->setLinkage(GlobalValue::InternalLinkage);
+        F->addFnAttr(llvm::Attribute::AlwaysInline);
+    }
+    F = M->getFunction("lowfat_oob_check_bound_new_sub_withoutsize");
+    if (F != nullptr)
+    {
+        //已经判断出是减法，所以只查base
+        BasicBlock *Entry  = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *Error  = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *Return = BasicBlock::Create(M->getContext(), "", F);
+        
+        // 多一次判断时使用
+        // BasicBlock *NullReturn = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *NullGo = BasicBlock::Create(M->getContext(), "", F);
+
+        IRBuilder<> builder(Entry);
+        auto i = F->getArgumentList().begin();
+        Value *Info = &(*(i++));
+        Value *Ptr = &(*(i++));
+        Value *AccessSize = &(*(i++));
+        Value *BasePtr = &(*(i++));
+        Value *Bound = &(*(i++));        
+
+        // Value *IBasePtr = builder.CreateBitCast(IBasePtr,builder.getInt8PtrTy());
+        // Value *RIPtr = builder.CreateBitCast(IPtr,builder.getInt8PtrTy());
+
+        Value *Cmp2 = builder.CreateICmpUGE(Ptr,BasePtr);
+        Value *TRPtr = builder.CreateSelect(Cmp2,Ptr,BasePtr);
+
+        // RPtr = builder.CreateBitCast(RPtr,builder.getInt8PtrTy());
+
+        // RPtr = builder.CreateBitCast(RPtr,builder.getInt64Ty());
+        // RPtr = builder.CreateLShr(RPtr,8);
+        // RPtr = builder.CreateBitCast(RPtr,Ptr->getType());
+        builder.CreateRet(TRPtr);
+        
+        F->setOnlyReadsMemory();
+        F->setDoesNotThrow();
+        F->setLinkage(GlobalValue::InternalLinkage);
+        F->addFnAttr(llvm::Attribute::AlwaysInline);
+    }
+    F = M->getFunction("lowfat_oob_check_size");
+    if (F != nullptr)
+    {
+        printf("cccc!\n");
+        BasicBlock *Entry  = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *Error  = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *Return = BasicBlock::Create(M->getContext(), "", F);
+        
+        // 多一次判断时使用
+        // BasicBlock *NullReturn = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *NullGo = BasicBlock::Create(M->getContext(), "", F);
+
+        IRBuilder<> builder(Entry);
+        auto i = F->getArgumentList().begin();
+        Value *Info = &(*(i++));
+        Value *Ptr = &(*(i++));
+        Value *AccessSize = &(*(i++));
+        Value *BasePtr = &(*(i++));
+        Value *Size = &(*(i++));
+
+
+        Value *IBasePtr = builder.CreatePtrToInt(BasePtr,
+            builder.getInt64Ty());
+        
+
+        // 下面是认为全有size的
+        Value *Bound = builder.CreatePtrToInt(BasePtr,
+            builder.getInt64Ty());
+        Value *RealSize = builder.CreateSub(Size,AccessSize);
+        Bound = builder.CreateAdd(Bound,RealSize);
+        Bound = builder.CreateBitCast(Bound, builder.getInt8PtrTy());
+
+        // // The check is: if (ptr - base > size - sizeof(*ptr)) error();
+        Value *IPtr = builder.CreatePtrToInt(Ptr, builder.getInt64Ty());
+
+        IBasePtr = builder.CreateAnd(IBasePtr,0x03FFFFFFFFFFFFFF);
+        IPtr = builder.CreateAnd(IPtr,0x03FFFFFFFFFFFFFF);
+
+        // Value *RIBasePtr = builder.CreateBitCast(IBasePtr,builder.getInt8PtrTy());
+        // Value *RIPtr = builder.CreateBitCast(IPtr,builder.getInt8PtrTy());
+
+        Value *Cmp2 = builder.CreateICmpUGE(IPtr,IBasePtr);
+        Value *TRPtr = builder.CreateSelect(Cmp2,Ptr,BasePtr);
+
+        Value *Diff = builder.CreateSub(IPtr, IBasePtr);
+        // Size = builder.CreateSub(Size, AccessSize);
+        // Value *Cmp = builder.CreateICmpUGE(Diff, Size);
+        Value *Cmp = builder.CreateICmpUGE(Diff, RealSize);
+        // builder5.CreateCondBr(Cmp, Error, Return);
+
+        Value *RPtr = builder.CreateSelect(Cmp,Bound,TRPtr);
+        builder.CreateRet(RPtr);
+        
+        F->setOnlyReadsMemory();
+        F->setDoesNotThrow();
+        F->setLinkage(GlobalValue::InternalLinkage);
+        F->addFnAttr(llvm::Attribute::AlwaysInline);
+    }
+    /*
+    F = M->getFunction("lowfat_oob_check_bound_size");
+    if (F != nullptr)
+    {
+        BasicBlock *Entry  = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *Error  = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *Return = BasicBlock::Create(M->getContext(), "", F);
+        
+        // 多一次判断时使用
+        // BasicBlock *NullReturn = BasicBlock::Create(M->getContext(), "", F);
+        // BasicBlock *NullGo = BasicBlock::Create(M->getContext(), "", F);
+
+        IRBuilder<> builder(Entry);
+        auto i = F->getArgumentList().begin();
+        Value *Info = &(*(i++));
+        Value *Ptr = &(*(i++));
+        Value *AccessSize = &(*(i++));
+        Value *BasePtr = &(*(i++));
+        Value *Bound = &(*(i++));
         Value *Size = &(*(i++));
 
 
@@ -2343,7 +3300,7 @@ static void addLowFatFuncs(Module *M)
     //     F->setLinkage(GlobalValue::InternalLinkage);
     //     F->addFnAttr(llvm::Attribute::AlwaysInline);
     // }
-
+    */
     F = M->getFunction("lowfat_stack_allocsize");
     if (F != nullptr)
     {
@@ -2527,6 +3484,27 @@ static bool isInterestingAlloca(Instruction *I)
         return false;
     set<Value *> seen;
     if (doesAllocaEscape(Alloca, seen))
+        return true;
+    return false;
+}
+/*
+ * Determine if the given call is "interesting malloc" or not.
+ */
+static bool isInterestingMalloc(Instruction *I)
+{
+    if (option_no_replace_malloc)
+        return false;
+    CallInst *Call = dyn_cast<CallInst>(I);
+    if (Call == nullptr)
+        return false;
+    Function *F = Call->getCalledFunction();
+    if(F == nullptr)
+        return false;
+    const string &Name = F->getName().str();
+    if (Name == "malloc" || Name == "realloc" || Name == "_Znwm" ||
+            Name == "_Znam" || Name == "_ZnwmRKSt9nothrow_t" ||
+            Name == "_ZnamRKSt9nothrow_t" || Name == "calloc" ||
+            Name == "valloc" || Name == "strdup" || Name == "strndup")
         return true;
     return false;
 }
@@ -2807,7 +3785,7 @@ static void makeAllocaLowFatPtr(Module *M, Instruction *I)
     else
         Ptr = builder.CreateCall(package, {Ptr, Size});
     Ptr = builder.CreateBitCast(Ptr, Alloca->getType());
-    // AllocedPtr = builder.CreateBitCast(AllocedPtr, Alloca->getType());
+    AllocedPtr = builder.CreateBitCast(AllocedPtr, Alloca->getType());
 
     // Replace all uses of `Alloca' with the (now low-fat) `Ptr'.
     // We do not replace lifetime intrinsics nor values used in the
@@ -2839,29 +3817,68 @@ static void makeAllocaLowFatPtr(Module *M, Instruction *I)
                     lifetimes.push_back(Usr2);
             }
         }
-        // if(dyn_cast<LoadInst>(Usr) || dyn_cast<StoreInst>(Usr))
-        //     ls_replace.push_back(Usr);
-        // else
+        if(dyn_cast<CmpInst>(Usr) || dyn_cast<LoadInst>(Usr) || dyn_cast<StoreInst>(Usr) || dyn_cast<MemSetInst>(Usr) || dyn_cast<MemTransferInst>(Usr))
+            ls_replace.push_back(Usr);
+        else
             replace.push_back(Usr);
     }
     
+    // 带size的指针
     for (User *Usr: replace)
         Usr->replaceUsesOfWith(Alloca, Ptr);
-    // for (User *Usr: ls_replace)
-    //     Usr->replaceUsesOfWith(Alloca, AllocedPtr);
+    // 不带size的指针
+    for (User *Usr: ls_replace)
+        Usr->replaceUsesOfWith(Alloca, AllocedPtr);
 
-    for (User *Usr: lifetimes)
-    {
-        // Lifetimes are deleted.  The alternative is to insert the mirroring
-        // after the lifetime start, however, this proved too difficult to get
-        // working.  One problem is intermediate casts which may be reused.
-        if (auto *Lifetime = dyn_cast<Instruction>(Usr))
-            Lifetime->eraseFromParent();
-    }
+    // for (User *Usr: lifetimes)
+    // {
+    //     // Lifetimes are deleted.  The alternative is to insert the mirroring
+    //     // after the lifetime start, however, this proved too difficult to get
+    //     // working.  One problem is intermediate casts which may be reused.
+    //     if (auto *Lifetime = dyn_cast<Instruction>(Usr))
+    //         Lifetime->eraseFromParent();
+    // }
     if (delAlloca)
         Alloca->eraseFromParent();
 }
+/*
+ * Convert an alloca instruction into a low-fat-pointer.  This is a more
+ * complicated transformation described in the paper:
+ * "Stack Bounds Protection with Low Fat Pointers", in NDSS 2017.
+ */
+ /*
+ * minifat pointer does not need the stack mirror to the heap
+ * but needs align and size as 2^n
+ */
+static void makeMallocMiniFatPtr(Module *M, Instruction *I)
+{
+    CallInst *Call = dyn_cast<CallInst>(I);
+    if (Call == nullptr)
+        return;
 
+    Function *F = I->getParent()->getParent();
+    auto i = nextInsertPoint(F, Call);
+    IRBuilder<> builder(i.first, i.second);
+
+    // 在给每一个用户之前，把他变成minifat-pointer
+    Value *NPtr = builder.CreateBitCast(Call, builder.getInt64Ty());
+    NPtr = builder.CreateAnd(NPtr, 0x03FFFFFFFFFFFFFF);
+    NPtr = builder.CreateBitCast(NPtr, Call->getType());
+
+    // Replace all uses of `malloc' with the (now low-fat) `Ptr'.
+    // We do not replace lifetime intrinsics nor values used in the
+    // construction of the low-fat pointer (NoReplace1, ...).
+    vector<User *> ls_replace;
+    for (User *Usr: Call->users())
+    {
+        if(dyn_cast<CmpInst>(Usr) || dyn_cast<LoadInst>(Usr) || dyn_cast<StoreInst>(Usr) || dyn_cast<MemSetInst>(Usr) || dyn_cast<MemTransferInst>(Usr)/*|| dyn_cast<GetElementPtrInst>(Usr)*/)
+            ls_replace.push_back(Usr);
+    }
+    
+    // 不带size的指针
+    for (User *Usr: ls_replace)
+        Usr->replaceUsesOfWith(Call, NPtr);
+}
 /*
  * Blacklist checking.
  */
@@ -2946,19 +3963,26 @@ static void maskInst(Instruction *I)
     if (I->getMetadata("nosanitize") != nullptr)
         return;
     // 对任意的指针加 屏蔽size的操作，假设指针是存在较后的这个操作数里的
+/*
     if(LoadInst *Load = dyn_cast<LoadInst>(I)) {
         IRBuilder<> builder(Load);
         Value *Ptr =  Load->getOperand(0);
+        Load->setVolatile(true);
+        if(find(maskInfo.begin(), maskInfo.end(),Ptr) != maskInfo.end())
+            return;
         Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
         TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
         TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
         auto OI = Load->op_begin();
         if(OI != Load->op_end() && (*OI)->getType()->getTypeID () == 15)
             *OI = TPtr;
-        Load->setVolatile(true);
+        
     } else if(StoreInst *Store = dyn_cast<StoreInst>(I) ) {
         IRBuilder<> builder(Store);
         Value *Ptr =  Store->getOperand(1);
+        Store->setVolatile(true);
+        if(find(maskInfo.begin(), maskInfo.end(),Ptr) != maskInfo.end())
+            return;
         Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
         TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
         TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
@@ -2967,7 +3991,7 @@ static void maskInst(Instruction *I)
         if(OI != Store->op_end() && (*OI)->getType()->getTypeID () == 15)
             *OI = TPtr;
         
-        Store->setVolatile(true);
+        
         // // for (auto OI = I->op_end()-1, OE = I->op_begin(); OI >= OE; --OI) {
         // //     if((*OI)->getType()->getTypeID () == 15) {
         // //         *OI = TPtr;
@@ -2975,10 +3999,14 @@ static void maskInst(Instruction *I)
         // //     }
         // // }
             
-    } else if (MemSetInst *MI = dyn_cast<MemSetInst>(I)) {
+    } else 
+*/
+    if (MemSetInst *MI = dyn_cast<MemSetInst>(I)) {
         // printf("no!!\n");
         IRBuilder<> builder(MI);
         Value *Ptr =  MI->getOperand(0);
+        if(find(maskInfo.begin(), maskInfo.end(),Ptr) != maskInfo.end())
+            return;
         Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
         TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
         TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
@@ -2990,9 +4018,14 @@ static void maskInst(Instruction *I)
         IRBuilder<> builder(MI);
         Value *mem_size = MI->getOperand(2);
         Value *Ptr =  MI->getOperand(0);
+        
         Value *TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
-        TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
-        TPtr = builder.CreateSub(TPtr, mem_size);
+        if(find(maskInfo.begin(), maskInfo.end(),Ptr) == maskInfo.end()) {
+            TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);     
+        } else {
+            TPtr = builder.CreateSub(TPtr, mem_size);
+        }
+            
         TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
         
         auto OI = MI->op_begin();
@@ -3000,34 +4033,41 @@ static void maskInst(Instruction *I)
 
         Ptr =  MI->getOperand(1);
         TPtr = builder.CreateBitCast(Ptr, builder.getInt64Ty());
-        TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);
-        TPtr = builder.CreateSub(TPtr, mem_size);
+        if(find(maskInfo.begin(), maskInfo.end(),Ptr) == maskInfo.end()) {
+            TPtr = builder.CreateAnd(TPtr,0x03FFFFFFFFFFFFFF);     
+        } else {
+            TPtr = builder.CreateSub(TPtr, mem_size);
+        }
+
         TPtr = builder.CreateBitCast(TPtr, Ptr->getType());
         OI++;
         *OI = TPtr;
-    } else if (CmpInst  *Cmp = dyn_cast<CmpInst >(I)) {
-        Value *Arg1 = Cmp->getOperand(0);
-        Value *Arg2 = Cmp->getOperand(1);
+    // } else if (CmpInst  *Cmp = dyn_cast<CmpInst >(I)) {
+    //     Value *Arg1 = Cmp->getOperand(0);
+    //     Value *Arg2 = Cmp->getOperand(1);
 
-        auto OI = Cmp->op_begin();
-        IRBuilder<> builder(Cmp);
-        if (Arg1!= NULL && Arg1->getType()->isPointerTy())
-        {    
-            Value* TArg1 = builder.CreateBitCast(Arg1, builder.getInt64Ty());
-            TArg1 = builder.CreateAnd(TArg1,0x03FFFFFFFFFFFFFF);
-            TArg1 = builder.CreateBitCast(TArg1, Arg1->getType());
-            
-            *OI = TArg1;
-        }  
+    //     auto OI = Cmp->op_begin();
+    //     IRBuilder<> builder(Cmp);
+    //     if (Arg1!= NULL && Arg1->getType()->isPointerTy())
+    //     {    
+    //         Value* TArg1 = builder.CreateBitCast(Arg1, builder.getInt64Ty());
+    //         // TArg1 = builder.CreateLShr(TArg1,8);
+    //         TArg1 = builder.CreateAnd(TArg1,0x03FFFFFFFFFFFFFF);
+    //         TArg1 = builder.CreateBitCast(TArg1, Arg1->getType());
 
-        if (Arg2!= NULL && Arg2->getType()->isPointerTy())
-        {
-            Value* TArg2 = builder.CreateBitCast(Arg2, builder.getInt64Ty());
-            TArg2 = builder.CreateAnd(TArg2,0x03FFFFFFFFFFFFFF);
-            TArg2 = builder.CreateBitCast(TArg2, Arg2->getType());
-            OI++;
-            *OI = TArg2;
-        }
+    //         *OI = TArg1;
+    //     }  
+
+    //     if (Arg2!= NULL && Arg2->getType()->isPointerTy())
+    //     {
+    //         Value* TArg2 = builder.CreateBitCast(Arg2, builder.getInt64Ty());
+    //         // TArg2 = builder.CreateLShr(TArg2,8);
+    //         TArg2 = builder.CreateAnd(TArg2,0x03FFFFFFFFFFFFFF);
+    //         TArg2 = builder.CreateBitCast(TArg2, Arg2->getType());
+    //         OI++;
+
+    //         *OI = TArg2;
+    //     }
         
         
     }
@@ -3044,6 +4084,7 @@ static void maskInst(Instruction *I)
                     continue;
                 }
                 Value* TArg = builder.CreateBitCast(Arg, builder.getInt64Ty());
+                // TArg = builder.CreateLShr(TArg,8);
                 TArg = builder.CreateAnd(TArg,0x03FFFFFFFFFFFFFF);
                 TArg = builder.CreateBitCast(TArg, Arg->getType());
 
@@ -3060,6 +4101,7 @@ static void maskInst(Instruction *I)
                     continue;
                 }
                 Value* TArg = builder.CreateBitCast(Arg, builder.getInt64Ty());
+                // TArg = builder.CreateLShr(TArg,8);
                 TArg = builder.CreateAnd(TArg,0x03FFFFFFFFFFFFFF);
                 TArg = builder.CreateBitCast(TArg, Arg->getType());
 
@@ -3077,13 +4119,15 @@ static void maskInst(Instruction *I)
                     continue;
                 }
                 Value* TArg = builder.CreateBitCast(Arg, builder.getInt64Ty());
+                // TArg = builder.CreateLShr(TArg,8);
                 TArg = builder.CreateAnd(TArg,0x03FFFFFFFFFFFFFF);
                 TArg = builder.CreateBitCast(TArg, Arg->getType());
 
                 *(OI+i) = TArg;
                 
             }
-        } else if (F != nullptr && (F->getName() == "llvm.va_start" || F->getName() == "llvm.va_end") ) {
+        } else if (F != nullptr && (F->getName() == "llvm.va_start" || F->getName() == "llvm.va_end"  || F->getName() == "PerlIO_printf" || F->getName() == "PerlIO_stdoutf" 
+                    || F->getName() == "PerlIO_sprintf" || F->getName() == "PerlIO_debug") ) {
             IRBuilder<> builder(Call);
             auto OI = Call->op_begin();
             for (unsigned i = 0; i < Call->getNumArgOperands(); i++)
@@ -3093,6 +4137,7 @@ static void maskInst(Instruction *I)
                     continue;
                 }
                 Value* TArg = builder.CreateBitCast(Arg, builder.getInt64Ty());
+                // TArg = builder.CreateLShr(TArg,8);
                 TArg = builder.CreateAnd(TArg,0x03FFFFFFFFFFFFFF);
                 TArg = builder.CreateBitCast(TArg, Arg->getType());
 
@@ -3109,6 +4154,7 @@ static void maskInst(Instruction *I)
                 if( (*OI)->getType()->isPointerTy() && FI->hasByValAttr()) {
                     Value *Arg = *OI;
                     Value* TArg = builder.CreateBitCast(Arg, builder.getInt64Ty());
+                    // TArg = builder.CreateLShr(TArg,8);
                     TArg = builder.CreateAnd(TArg,0x03FFFFFFFFFFFFFF);
                     TArg = builder.CreateBitCast(TArg, Arg->getType());
 
@@ -3118,7 +4164,41 @@ static void maskInst(Instruction *I)
         }
     }
 }
+static void cmpMaskInst(Instruction *I)
+{
+    if (I->getMetadata("nosanitize") != nullptr)
+        return;
+    // 对任意的指针加 屏蔽size的操作，假设指针是存在较后的这个操作数里的
+    if (CmpInst  *Cmp = dyn_cast<CmpInst >(I)) {
+        Value *Arg1 = Cmp->getOperand(0);
+        Value *Arg2 = Cmp->getOperand(1);
 
+        auto OI = Cmp->op_begin();
+        IRBuilder<> builder(Cmp);
+        if (Arg1!= NULL && Arg1->getType()->isPointerTy())
+        {    
+            Value* TArg1 = builder.CreateBitCast(Arg1, builder.getInt64Ty());
+            // TArg1 = builder.CreateLShr(TArg1,8);
+            TArg1 = builder.CreateAnd(TArg1,0x03FFFFFFFFFFFFFF);
+            TArg1 = builder.CreateBitCast(TArg1, Arg1->getType());
+
+            *OI = TArg1;
+        }  
+
+        if (Arg2!= NULL && Arg2->getType()->isPointerTy())
+        {
+            Value* TArg2 = builder.CreateBitCast(Arg2, builder.getInt64Ty());
+            // TArg2 = builder.CreateLShr(TArg2,8);
+            TArg2 = builder.CreateAnd(TArg2,0x03FFFFFFFFFFFFFF);
+            TArg2 = builder.CreateBitCast(TArg2, Arg2->getType());
+            OI++;
+
+            *OI = TArg2;
+        }
+        
+        
+    }
+}
 
 /*
  * LowFat LLVM Pass
@@ -3154,6 +4234,20 @@ struct LowFat : public ModulePass
         if (isBlacklisted(Blacklist.get(), &M))
             return true;
 
+        //Pass (0): CmpMask所有的指针
+        for (auto &F: M)
+        {
+            if (F.isDeclaration())
+                continue;
+            if (isBlacklisted(Blacklist.get(), &F))
+                continue;
+
+            // STEP #1: Find all instructions that we need to instrument:
+            for (auto &BB: F)
+                for (auto &I: BB)
+                    cmpMaskInst(&I);
+        }
+
         // PASS (1): Bounds instrumentation
         const TargetLibraryInfo &TLI =
             getAnalysis<TargetLibraryInfoWrapperPass>().getTLI();
@@ -3181,6 +4275,12 @@ struct LowFat : public ModulePass
             for (auto &p: plan)
                 insertBoundsCheck(DL, get<0>(p), get<1>(p), get<2>(p),
                     baseInfo);
+
+            //  4: erase old load/store 
+            for(auto it=eraseInstInfo.begin() ;it!=eraseInstInfo.end();it++)
+            {
+                (*it)->eraseFromParent();
+            }
         }
 
         // PASS (1a) Stack object lowfatification
@@ -3201,46 +4301,61 @@ struct LowFat : public ModulePass
                 makeAllocaLowFatPtr(&M, I);
         }
 
-        // Pass (1b) Global Variable lowfatification
-        /*
-	if (!option_no_replace_globals)
+        // // Pass (1b) Global Variable lowfatification
+        if (!option_no_replace_globals)
             for (auto &GV: M.getGlobalList())
                 makeGlobalVariableLowFatPtr(&M, &GV);
-     	*/
-	for (auto &F: M)
+        // for (auto &F: M)
+        // {
+        //     if (F.isDeclaration())
+        //         continue;
+        //     if (isBlacklisted(Blacklist.get(), &F))
+        //         continue;
+
+        //     for (auto &BB: F)
+        //         for (auto &I: BB)
+        //             gvMakeInst(&I);
+        // }
+
+        // // Pass (1c) malloc Variable lowfatification
+        for (auto &F: M)
         {
             if (F.isDeclaration())
                 continue;
-            if (isBlacklisted(Blacklist.get(), &F))
-                continue;
 
+            // STEP #1: Find all interesting mallocs:
+            vector<Instruction *> mallocs;
             for (auto &BB: F)
                 for (auto &I: BB)
-                    gvMakeInst(&I);
+                    if (isInterestingMalloc(&I))
+                        mallocs.push_back(&I);
+
+            // STEP #2: Mirror all interesting mallocs:
+            for (auto *I: mallocs)
+                makeMallocMiniFatPtr(&M, I);
         }
 
         // PASS (2): Replace unsafe library calls
         replaceUnsafeLibFuncs(&M);
 
-        // PASS (3): Add function definitions
+        // // PASS (3): Add function definitions
         addLowFatFuncs(&M);
 
-        // PASS (4): Optimize lowfat_malloc() calls
-        for (auto &F: M)
-        {
-            if (F.isDeclaration())
-                continue;
-            vector<Instruction *> dels;
-            for (auto &BB: F)
-                for (auto &I: BB)
-                    optimizeMalloc(&M, &I, dels);
-            for (auto &I: dels)
-                I->eraseFromParent();
-        }
+        // // PASS (4): Optimize lowfat_malloc() calls
+        // for (auto &F: M)
+        // {
+        //     if (F.isDeclaration())
+        //         continue;
+        //     vector<Instruction *> dels;
+        //     for (auto &BB: F)
+        //         for (auto &I: BB)
+        //             optimizeMalloc(&M, &I, dels);
+        //     for (auto &I: dels)
+        //         I->eraseFromParent();
+        // }
 
         //Pass (5): Mask所有的指针
-    	/*
-	for (auto &F: M)
+        for (auto &F: M)
         {
             if (F.isDeclaration())
                 continue;
@@ -3252,7 +4367,6 @@ struct LowFat : public ModulePass
                 for (auto &I: BB)
                     maskInst(&I);
         }
-	*/
 
 
         if (option_debug)
@@ -3315,4 +4429,5 @@ static void register_pass(const PassManagerBuilder &PMB,
 static RegisterStandardPasses RegisterPass(
     PassManagerBuilder::EP_LoopOptimizerEnd, register_pass);
 #endif      /* LOWFAT_PLUGIN */
+
 
