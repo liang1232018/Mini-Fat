@@ -2800,7 +2800,7 @@ static void maskInst(Instruction *I)
                 *(OI+i) = TArg;
                 
             }
-         } else if (F != nullptr && (function_set.find(F->getName()) == function_set.end() && F->getName().find("minifat") == string::npos) ) {
+         } else if (F != nullptr && (function_set.find(F->getName()) == function_set.end() && F->getName().find("minifat") == string::npos && F->getName().find("lowfat") == string::npos) ) {
             IRBuilder<> builder(Call);
             auto OI = Call->op_begin();
             for (unsigned i = 0; i < Call->getNumArgOperands(); i++)
